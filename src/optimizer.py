@@ -4,7 +4,12 @@ import numpy as np
 from numpy.typing import ArrayLike
 from scipy.optimize import OptimizeResult, minimize
 
-from src.portfolio import calculate_portfolio_variance, validate_weights
+from src.portfolio import (
+    calculate_portfolio_return,
+    calculate_portfolio_variance,
+    calculate_sharpe_ratio,
+    validate_weights,
+)
 
 
 def optimize_global_minimum_variance(
@@ -56,4 +61,77 @@ def optimize_global_minimum_variance(
     validate_weights(result.x, number_of_assets)
     # Expose the actual portfolio variance rather than the scaled solver value.
     result.fun = calculate_portfolio_variance(result.x, covariance)
+    return result
+
+
+def optimize_maximum_sharpe_ratio(
+    expected_returns: ArrayLike,
+    covariance_matrix: ArrayLike,
+    risk_free_rate: float,
+) -> OptimizeResult:
+    """Find the fully invested, long-only portfolio with maximum Sharpe ratio."""
+    return_vector = np.asarray(expected_returns, dtype=float)
+    if return_vector.ndim != 1 or return_vector.size == 0:
+        raise ValueError(
+            "Expected returns must be a non-empty one-dimensional vector; "
+            f"received shape {return_vector.shape}."
+        )
+    if not np.isfinite(return_vector).all():
+        raise ValueError("Expected returns must contain only finite values.")
+    if not np.isfinite(risk_free_rate):
+        raise ValueError("Risk-free rate must be finite.")
+
+    covariance = np.asarray(covariance_matrix, dtype=float)
+    number_of_assets = len(return_vector)
+    if covariance.shape != (number_of_assets, number_of_assets):
+        raise ValueError(
+            "Covariance matrix shape must match the expected-return vector; "
+            f"received {covariance.shape} for {number_of_assets} assets."
+        )
+
+    initial_weights = np.full(number_of_assets, 1.0 / number_of_assets)
+
+    # These calls validate all inputs using the portfolio evaluator's contract.
+    calculate_portfolio_return(initial_weights, return_vector)
+    calculate_portfolio_variance(initial_weights, covariance)
+
+    def negative_sharpe_objective(weights: np.ndarray) -> float:
+        """Return negative Sharpe because SciPy minimizes objectives."""
+        portfolio_return = float(weights @ return_vector)
+        portfolio_variance = float(weights.T @ covariance @ weights)
+
+        if portfolio_variance <= 0.0:
+            return 1.0e12
+
+        portfolio_volatility = float(np.sqrt(portfolio_variance))
+        return -((portfolio_return - risk_free_rate) / portfolio_volatility)
+
+    full_investment_constraint = {
+        "type": "eq",
+        "fun": lambda weights: float(np.sum(weights) - 1.0),
+    }
+    long_only_bounds = [(0.0, 1.0)] * number_of_assets
+
+    result = minimize(
+        fun=negative_sharpe_objective,
+        x0=initial_weights,
+        method="SLSQP",
+        bounds=long_only_bounds,
+        constraints=[full_investment_constraint],
+        options={"ftol": 1e-12, "maxiter": 1_000, "disp": False},
+    )
+
+    if not result.success:
+        raise RuntimeError(
+            "Maximum Sharpe ratio optimization failed: "
+            f"{result.message}"
+        )
+
+    validate_weights(result.x, number_of_assets)
+    calculate_sharpe_ratio(
+        result.x,
+        return_vector,
+        covariance,
+        risk_free_rate,
+    )
     return result
