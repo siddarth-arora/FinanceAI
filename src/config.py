@@ -27,6 +27,9 @@ RISK_FREE_RATE = 0.04
 FRONTIER_POINTS = 50
 
 RAW_PRICES_PATH = PROJECT_ROOT / "data" / "raw" / "stock_prices.parquet"
+EFFICIENT_FRONTIER_FIGURE_PATH = (
+    PROJECT_ROOT / "outputs" / "figures" / "efficient_frontier.png"
+)
 
 # Acquisition-stage data-quality thresholds.
 MIN_OBSERVATIONS = 750
