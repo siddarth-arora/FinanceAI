@@ -1,7 +1,9 @@
 """Constrained numerical optimization for baseline Markowitz portfolios."""
 
+from dataclasses import dataclass
+
 import numpy as np
-from numpy.typing import ArrayLike
+from numpy.typing import ArrayLike, NDArray
 from scipy.optimize import OptimizeResult, minimize
 
 from src.portfolio import (
@@ -10,6 +12,17 @@ from src.portfolio import (
     calculate_sharpe_ratio,
     validate_weights,
 )
+
+
+@dataclass(frozen=True)
+class EfficientFrontierPoint:
+    """One verified minimum-variance portfolio on the efficient frontier."""
+
+    target_return: float
+    expected_return: float
+    variance: float
+    volatility: float
+    weights: NDArray[np.float64]
 
 
 def optimize_global_minimum_variance(
@@ -141,6 +154,7 @@ def optimize_minimum_variance_for_target_return(
     expected_returns: ArrayLike,
     covariance_matrix: ArrayLike,
     target_return: float,
+    initial_weights: ArrayLike | None = None,
 ) -> OptimizeResult:
     """Find the long-only minimum-variance portfolio for a target return."""
     return_vector = np.asarray(expected_returns, dtype=float)
@@ -171,14 +185,26 @@ def optimize_minimum_variance_for_target_return(
             f"{maximum_asset_return:.6%}."
         )
 
-    initial_weights = _create_target_return_initial_weights(
-        return_vector,
-        target_return,
-    )
+    if initial_weights is None:
+        starting_weights = _create_target_return_initial_weights(
+            return_vector,
+            target_return,
+        )
+    else:
+        starting_weights = validate_weights(initial_weights, number_of_assets)
+        starting_return = calculate_portfolio_return(
+            starting_weights,
+            return_vector,
+        )
+        if not np.isclose(starting_return, target_return, atol=1e-8, rtol=0.0):
+            raise ValueError(
+                f"Initial portfolio return {starting_return:.6%} does not "
+                f"match target return {target_return:.6%}."
+            )
 
     # These calls validate all inputs using the portfolio evaluator's contract.
-    calculate_portfolio_return(initial_weights, return_vector)
-    calculate_portfolio_variance(initial_weights, covariance)
+    calculate_portfolio_return(starting_weights, return_vector)
+    calculate_portfolio_variance(starting_weights, covariance)
     objective_scale = max(float(np.max(np.abs(covariance))), 1.0e-12)
 
     def variance_objective(weights: np.ndarray) -> float:
@@ -197,7 +223,7 @@ def optimize_minimum_variance_for_target_return(
 
     result = minimize(
         fun=variance_objective,
-        x0=initial_weights,
+        x0=starting_weights,
         method="SLSQP",
         bounds=long_only_bounds,
         constraints=[full_investment_constraint, target_return_constraint],
@@ -244,3 +270,103 @@ def _create_target_return_initial_weights(
     initial_weights[lowest_index] = 1.0 - high_weight
     initial_weights[highest_index] = high_weight
     return initial_weights
+
+
+def generate_efficient_frontier(
+    expected_returns: ArrayLike,
+    covariance_matrix: ArrayLike,
+    number_of_points: int,
+) -> list[EfficientFrontierPoint]:
+    """Generate the efficient upper branch using target-return optimization."""
+    if not isinstance(number_of_points, int) or isinstance(number_of_points, bool):
+        raise TypeError("Number of frontier points must be an integer.")
+    if number_of_points < 2:
+        raise ValueError("At least two frontier points are required.")
+
+    return_vector = np.asarray(expected_returns, dtype=float)
+    if return_vector.ndim != 1 or return_vector.size == 0:
+        raise ValueError(
+            "Expected returns must be a non-empty one-dimensional vector; "
+            f"received shape {return_vector.shape}."
+        )
+    if not np.isfinite(return_vector).all():
+        raise ValueError("Expected returns must contain only finite values.")
+
+    covariance = np.asarray(covariance_matrix, dtype=float)
+    gmv_result = optimize_global_minimum_variance(covariance)
+    gmv_return = calculate_portfolio_return(gmv_result.x, return_vector)
+    maximum_return = float(return_vector.max())
+
+    target_returns = np.linspace(gmv_return, maximum_return, number_of_points)
+    frontier: list[EfficientFrontierPoint] = []
+    highest_return_index = int(np.argmax(return_vector))
+
+    for point_number, target_return in enumerate(target_returns, start=1):
+        if not frontier:
+            starting_weights = np.asarray(gmv_result.x, dtype=float)
+        else:
+            previous_point = frontier[-1]
+            step_fraction = (target_return - previous_point.expected_return) / (
+                maximum_return - previous_point.expected_return
+            )
+            maximum_return_weights = np.zeros(len(return_vector))
+            maximum_return_weights[highest_return_index] = 1.0
+            starting_weights = (
+                (1.0 - step_fraction) * previous_point.weights
+                + step_fraction * maximum_return_weights
+            )
+
+        try:
+            result = optimize_minimum_variance_for_target_return(
+                return_vector,
+                covariance,
+                float(target_return),
+                initial_weights=starting_weights,
+            )
+        except (ValueError, RuntimeError) as error:
+            raise RuntimeError(
+                f"Efficient-frontier point {point_number}/{number_of_points} "
+                f"failed for target {target_return:.6%}: {error}"
+            ) from error
+
+        if not result.success:
+            raise RuntimeError(
+                f"Efficient-frontier point {point_number}/{number_of_points} "
+                f"did not converge for target {target_return:.6%}: "
+                f"{result.message}"
+            )
+
+        weights = np.asarray(result.x, dtype=float)
+        validate_weights(weights, len(return_vector))
+        achieved_return = calculate_portfolio_return(weights, return_vector)
+        if not np.isclose(
+            achieved_return,
+            target_return,
+            atol=1e-8,
+            rtol=0.0,
+        ):
+            raise RuntimeError(
+                f"Efficient-frontier point {point_number}/{number_of_points} "
+                f"achieved {achieved_return:.6%} instead of "
+                f"{target_return:.6%}."
+            )
+
+        variance = calculate_portfolio_variance(weights, covariance)
+        volatility = float(np.sqrt(variance))
+        frontier.append(
+            EfficientFrontierPoint(
+                target_return=float(target_return),
+                expected_return=achieved_return,
+                variance=variance,
+                volatility=volatility,
+                weights=weights.copy(),
+            )
+        )
+
+    frontier_volatilities = np.array([point.volatility for point in frontier])
+    if np.any(np.diff(frontier_volatilities) < -1e-8):
+        raise RuntimeError(
+            "Efficient-frontier volatility must not decrease above the GMV point."
+        )
+
+    return frontier

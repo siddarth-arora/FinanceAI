@@ -24,10 +24,10 @@ END_DATE = "2026-01-01"
 
 TRADING_DAYS = 252
 RISK_FREE_RATE = 0.04
+FRONTIER_POINTS = 50
 
 RAW_PRICES_PATH = PROJECT_ROOT / "data" / "raw" / "stock_prices.parquet"
 
 # Acquisition-stage data-quality thresholds.
 MIN_OBSERVATIONS = 750
 MAX_MISSING_FRACTION = 0.05
-
