@@ -336,9 +336,12 @@ Run the complete test suite:
 python -m pytest -v
 ```
 
-The portfolio tests use a two-asset artificial example to verify weight
-validation, expected return, expanded quadratic variance, volatility, Sharpe
-ratio, dimensions, and covariance symmetry without depending on live data.
+Tests cover portfolio mathematics, arithmetic returns and sample covariance,
+local dataset validation, optimizer feasibility and frontier ordering, and the
+JSON pipeline contract. Synthetic inputs and temporary Parquet fixtures keep
+the suite independent of live data and the git-ignored frozen dataset. The
+pipeline test rejects network connections and verifies that analysis leaves
+the input file unchanged.
 
 ## Reproducibility and limitations
 

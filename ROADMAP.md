@@ -65,7 +65,7 @@ FinanceAI/
 | Structured JSON contract | ✅ Done | `metadata`, `annual_expected_returns`, `annual_covariance`, `portfolios`, `efficient_frontier` |
 | Frontier plot | ✅ Done | Static PNG |
 | CLI | ✅ Done | `python -m src.main` |
-| Unit tests | 🟡 Partial | 9 tests, `portfolio.py` only (all passing) |
+| Unit tests | ✅ Baseline covered | Synthetic tests for portfolio math, returns, loader, optimizer and JSON pipeline |
 | Agentic layer | ❌ Not started | — |
 | Risk profiles (low / medium / high) | ❌ Not started | — |
 | Amount-based allocation | ❌ Not started | — |
@@ -117,10 +117,10 @@ Key principle: **numbers flow down from `src/` and are never regenerated above i
 
 ### Phase 0 — Harden the baseline (inside `src/` and `tests/`)
 
-- [ ] `tests/test_returns.py` — simple-return formula, annualization, covariance symmetry, NaN rejection.
-- [ ] `tests/test_optimizer.py` — on a synthetic 3–5 asset case: GMV weights valid; Max Sharpe ≥ Sharpe of every frontier point (within tolerance); frontier returns increasing and volatilities non-decreasing; infeasible target raises.
-- [ ] `tests/test_pipeline.py` — `to_dict()` is JSON-serializable, has the documented keys, weights keyed by ticker and summing to 1. Use a small temporary Parquet fixture so tests do not depend on the git-ignored real dataset.
-- [ ] `tests/test_data_loader.py` — missing file, wrong ticker order, duplicate dates, non-positive prices.
+- [x] `tests/test_returns.py` — simple-return formula, annualization, covariance symmetry, NaN rejection.
+- [x] `tests/test_optimizer.py` — on a synthetic 3–5 asset case: GMV weights valid; Max Sharpe ≥ Sharpe of every frontier point (within tolerance); frontier returns increasing and volatilities non-decreasing; infeasible target raises.
+- [x] `tests/test_pipeline.py` — `to_dict()` is JSON-serializable, has the documented keys, weights keyed by ticker and summing to 1. Use a small temporary Parquet fixture so tests do not depend on the git-ignored real dataset.
+- [x] `tests/test_data_loader.py` — missing file, wrong ticker order, duplicate dates, non-positive prices.
 - [ ] Decide on Sharpe in frontier points (Observation 1). If added: update `optimizer.py`, `pipeline.py`, README schema, tests.
 - [ ] Optional: expose per-asset annual volatility in `to_dict()` (derived from Σ diagonal, no new assumption).
 - [ ] Optional: `data/reference/tickers.json` with company name and sector for display (static, no network).
