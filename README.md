@@ -9,13 +9,14 @@ efficient portfolios with constrained numerical optimization.
 The numerical MPT layer is independent from the downstream `agent/` package
 and future LLM or user-interface code.
 
-**Current milestone:** baseline hardening (Phase 0) and deterministic risk
-profiles (Phase 1) are complete. Despite its name, `agent/` currently calls no
-LLM. No model client or LLM SDK is integrated; a local API key is not used yet. LangGraph
-is proposed for Phase 3 and is not installed by this project's requirements.
+**Current milestone:** baseline hardening (Phase 0), deterministic risk
+profiles (Phase 1), and fractional amount allocation (Phase 2) are complete.
+Despite its name, `agent/` currently calls no LLM. No model client or LLM SDK is
+integrated; a local API key is not used yet. LangGraph is proposed for Phase 3
+and is not installed by this project's requirements.
 
-Fractional amount allocation (Phase 2) is in progress, followed by LLM
-explanations and guardrails (Phase 3). See [ROADMAP.md](ROADMAP.md) for progress,
+The next milestone is read-only tools, LLM explanations and guardrails (Phase 3).
+See [ROADMAP.md](ROADMAP.md) for progress,
 remaining decisions, and the sequence of small feature-branch commits.
 
 ## Current scope
@@ -36,7 +37,8 @@ Implemented:
 - Synthetic tests for portfolio math, returns, loading, optimization and JSON output
 - Deterministic low / medium / high profile selection from the sampled frontier
 - Concentration flags, selection provenance, and an offline profile JSON command
-- Fractional allocation Python interface with exact decimal monetary targets
+- Fractional allocation Python interface and CLI with exact monetary targets
+- Reconciled monetary display, rounding audit, and optional dust grouping
 
 Not implemented:
 
@@ -94,7 +96,8 @@ FinanceAI/
 │   ├── __init__.py
 │   ├── __main__.py
 │   ├── profiles.py
-│   └── allocation.py
+│   ├── allocation.py
+│   └── formatting.py
 ├── data/
 │   ├── raw/
 │   │   └── stock_prices.parquet
@@ -122,7 +125,9 @@ FinanceAI/
     ├── test_pipeline.py
     └── agent/
         ├── test_profiles.py
-        └── test_allocation.py
+        ├── test_allocation.py
+        ├── test_formatting.py
+        └── test_cli.py
 ```
 
 ## Financial method
@@ -380,7 +385,9 @@ python -m agent
 ```
 
 `agent/__main__.py` calls `run_mpt_analysis().to_dict()`, passes the result to
-`agent.profiles.select_profiles()`, and prints JSON. `agent/profiles.py` applies
+`agent.profiles.select_profiles()`, and prints JSON. With `--amount`, it calls
+`agent.allocation.allocate_amount()` and prints the allocation instead.
+`agent/profiles.py` applies
 fixed selection rules and uses `src.portfolio` to validate metrics and compute
 Sharpe. No prompts, model calls, or agent framework run in either file.
 
@@ -425,14 +432,23 @@ for presentation. The baseline JSON schema is unchanged.
 
 These profiles describe historical estimates within the frozen universe. They
 are not forecasts or personalized investment advice, and “low” does not mean
-safe. Fractional amount allocation is in progress, followed by read-only
-LLM explanation and guardrails. See `ROADMAP.md` for remaining phases.
+safe. Fractional amount allocation is available below; read-only LLM
+explanation and guardrails are the next milestone. See `ROADMAP.md` for remaining phases.
 
 ## Fractional amount allocation (roadmap Phase 2)
 
-The Python allocation interface is implemented; display rounding and CLI input
-are the next step in this milestone. It consumes a baseline analysis payload
-and selects a validated profile, rejecting modified weights with stale metrics:
+Both the Python interface and CLI run offline. The original `python -m agent`
+command still prints all three profiles. Supply an amount for an allocation:
+
+```bash
+python -m agent --amount 10000.00 --currency USD --profile medium
+python -m agent --amount 10000.00 --currency INR --profile high --hide-dust
+```
+
+With `--amount`, currency defaults to USD and profile to medium. Currency,
+profile and dust options require an amount. Invalid inputs fail before analysis.
+The Python interface consumes a baseline analysis payload and selects a
+validated profile, rejecting modified weights with stale metrics:
 
 ```python
 from agent.allocation import allocate_amount
@@ -448,14 +464,32 @@ than `999999999999.99` (an application input limit). USD and INR are supported
 labels; no currency conversion or live-price request occurs.
 
 `AllocationResult.to_dict()` contains `mode`, `amount`, `currency`,
-`target_profile`, `target_amounts`, `numerical_residual`, and `notice`. The complete
-source profile retains its metadata, warnings and disclaimer. Monetary values
+`target_profile`, `target_amounts`, `numerical_residual`, `display`, and `notice`.
+The complete source profile retains its metadata, warnings and disclaimer. Monetary values
 serialize as decimal strings to preserve precision; weights and portfolio metrics
 retain their existing numeric representation. Target amounts multiply the input
 by each weight's full round-trip decimal representation, without normalizing
 weights. `numerical_residual` records tiny weight-sum drift, not uninvested cash.
 All target holdings, including dust, remain present. These are target amounts,
 not trades or share counts. No financial assumption or frozen dataset changes.
+
+The separate `display` view uses two decimal places and always reconciles to the
+input amount. For presentation only, negative targets within the baseline's
+numerical tolerance become zero and positive target amounts are proportionally
+scaled to remove weight-sum drift. Each amount is floored to whole cents/paise,
+then remaining units go to the largest fractional remainders. Alphabetical ticker
+order breaks ties. `rounding_adjustments` records each difference from the exact
+target, and `method` and `notice` explain the procedure. Target weights and their
+historical metrics remain unchanged; display values are not an effective traded
+portfolio.
+
+All display holdings are visible by default. `--hide-dust` (or
+`allocation.to_dict(hide_dust=True)`) groups target holdings below 0.5% into
+`display.hidden_assets` and `display.hidden_amount`. Visible `display.amounts`
+plus the hidden amount equal `display.total`, which equals the input amount.
+Hidden holdings are allocated money, not leftover cash. Full-precision targets
+always include every ticker. Whole-share mode and currency conversion remain
+unimplemented.
 
 ## Tests
 
@@ -471,11 +505,12 @@ JSON pipeline contract. Profile tests cover selection rules, ordering,
 concentration and overlap warnings, ticker mapping, configured risk-free rates,
 invalid inputs, provenance, and copy isolation. Synthetic inputs and temporary
 Parquet fixtures keep the suite independent of live data and the git-ignored
-frozen dataset. The
-pipeline test rejects network connections and verifies that analysis leaves
+frozen dataset. The pipeline test rejects network connections and verifies that analysis leaves
 the input file unchanged.
 
-The Phase 0–1 checkpoint has 46 passing tests. Before completing each change,
+The Phase 0–2 checkpoint has 106 passing tests, including allocation validation,
+exact products, rounding ties, one-cent amounts, dust grouping, CLI behavior,
+and unchanged offline profile outputs. Before completing each change,
 run the repository checks with the virtual environment active:
 
 ```bash
@@ -483,11 +518,12 @@ python -m pytest -v
 python -m src.main
 python -c "import json; from src.pipeline import run_mpt_analysis; json.dumps(run_mpt_analysis().to_dict(), allow_nan=False); print('JSON contract valid')"
 python -m agent
+python -m agent --amount 10000 --currency USD --profile medium
 git diff --check
 git status
 ```
 
-Tests use synthetic data; the two CLI commands and the JSON contract check use
+Tests use synthetic data; the CLI commands and the JSON contract check use
 the frozen local Parquet file. They do not download or regenerate it. Continue
 development on `feature/ai-agentic-features` with a focused, validated commit for
 each step. Implementation boundaries are documented in [AGENTS.md](AGENTS.md).

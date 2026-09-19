@@ -103,10 +103,11 @@ serialize `result.to_dict()`. It should not duplicate the MPT workflow.
 ## Downstream implementation status and handoff
 
 `agent/` currently contains deterministic profile selection and fractional
-monetary targets. Display reconciliation and CLI allocation are in progress. It calls no
+allocation with display reconciliation. Both run offline. It calls no
 LLM and has no model provider, prompts, or LLM dependencies configured.
-`agent/__main__.py` calls the supported pipeline, selects profiles, and prints
-JSON; `agent/profiles.py` exposes `select_profiles(payload)` and `ProfileResult`.
+`agent/__main__.py` calls the supported pipeline and prints profile JSON, or
+allocation JSON when `--amount` is supplied; `agent/profiles.py` exposes
+`select_profiles(payload)` and `ProfileResult`.
 
 Consumers should use `select_profiles(run_mpt_analysis().to_dict())` and
 `ProfileResult.to_dict()` rather than parsing the profile CLI. Preserve the
@@ -117,9 +118,13 @@ sampled approximation to Maximum Sharpe, not necessarily the exact optimum.
 The fractional allocation interface is
 `agent.allocation.allocate_amount(amount, currency, payload, profile_name)`.
 It selects profiles through the validated payload, and serializes money as
-decimal strings while leaving rates and weights numeric. Keep target weights unchanged and distinguish calculated
-amounts from rounded display amounts. Currency input must not imply an FX
-conversion or live-price lookup. Whole-share allocation remains an optional
+decimal strings while leaving rates and weights numeric. Keep target weights
+unchanged and distinguish calculated amounts from rounded display amounts. Currency input must not imply an FX
+conversion or live-price lookup. `AllocationResult.to_dict()` provides precise
+`target_amounts` and a separate `display` view that reconciles minor units with
+largest-remainder rounding. Display normalization, rounding, or dust grouping
+must never change the target weights or historical metrics. Display amounts are
+not effective traded weights. Whole-share allocation remains an optional
 later extension requiring effective-weight validation as described above.
 
 Future LLM orchestration belongs in `agent/` or a separate service, with its

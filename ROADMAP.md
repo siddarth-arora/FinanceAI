@@ -5,17 +5,18 @@
 > GUI. This document follows the working contract in `AGENTS.md`; every planned item
 > below is placed so that it does **not** break that contract.
 
-**Current checkpoint:** Phase 0 required work and Phase 1 are complete on
-`feature/ai-agentic-features` (46 passing tests). The `agent/` package is plain
-Python: it calls no LLM and has no model client, prompts, or LLM SDK integrated.
-A local `.env` may store a key for future use; current commands do not load it. LangGraph is a Phase 3 proposal, not a current dependency.
+**Current checkpoint:** Phase 0 required work, Phase 1, and fractional Phase 2
+are complete on `feature/ai-agentic-features` (106 passing tests). The `agent/`
+package is plain Python: it calls no LLM and has no model client, prompts, or LLM SDK integrated.
+A local `.env` may store a key for future use; current commands do not load it.
+LangGraph is a Phase 3 proposal, not a current dependency.
 
 | Milestone | Status | Next action |
 | --- | --- | --- |
 | Phase 0: baseline hardening | Complete; optional display metadata deferred | Preserve the verified numerical baseline |
 | Phase 1: deterministic profiles | Complete | Consume the existing structured profile contract |
-| Phase 2: fractional allocation | In progress; Python targets implemented | Add display rounding and CLI input |
-| Phase 3: LLM explanations | Planned; not implemented | Add read-only tools and fallback, then choose provider/model |
+| Phase 2: fractional allocation | Complete; optional whole shares deferred | Consume exact targets and reconciled display |
+| Phase 3: LLM explanations | Next; not implemented | Add read-only tools and fallback, then choose provider/model |
 | Phases 4–6: API, GUI, research | Planned; not implemented | Build after the profile and allocation contracts stabilize |
 
 ---
@@ -61,14 +62,20 @@ FinanceAI/
 │   └── main.py                # CLI summary + figure
 ├── agent/
 │   ├── profiles.py            # Deterministic sampled-profile selection
-│   └── __main__.py            # Offline JSON inspection command
+│   ├── __main__.py            # Offline profile/allocation JSON
+│   ├── allocation.py          # Exact fractional monetary targets
+│   └── formatting.py          # Reconciled monetary display
 └── tests/
     ├── test_portfolio.py
     ├── test_returns.py
     ├── test_data_loader.py
     ├── test_optimizer.py
     ├── test_pipeline.py
-    └── agent/test_profiles.py
+    └── agent/
+        ├── test_profiles.py
+        ├── test_allocation.py
+        ├── test_formatting.py
+        └── test_cli.py
 ```
 
 ### 2.2 Feature status
@@ -89,7 +96,7 @@ FinanceAI/
 | Unit tests | ✅ Baseline covered | Synthetic tests for portfolio math, returns, loader, optimizer and JSON pipeline |
 | Agentic layer | 🟡 Foundation ready | Deterministic consumer package; LLM workflow remains Phase 3 |
 | Risk profiles (low / medium / high) | ✅ Done | Sampled candidates, provenance, concentration and overlap flags |
-| Amount-based allocation | 🟡 In progress | Exact monetary targets; display rounding and CLI remain |
+| Amount-based allocation | ✅ Fractional mode done | Exact targets, reconciled display, USD/INR labels, CLI; whole shares deferred |
 | API service | ❌ Not started | — |
 | GUI | ❌ Not started | — |
 
@@ -109,8 +116,9 @@ Original review findings and their current resolution:
 
 ## 3. Target architecture
 
-Only `src/`, `agent/profiles.py`, and the CLI entry points exist today. The
-allocation, tools, explanation, guardrail, API, and GUI components below are planned.
+The baseline, deterministic profiles, fractional allocation, display formatting,
+and CLI entry points exist today. Tools, LLM explanations, guardrails, API, and
+GUI components below are planned.
 
 ```text
 Yahoo Finance
@@ -184,26 +192,29 @@ Tasks:
 
 ### Phase 2 — Amount-based allocation (`agent/allocation.py`)
 
-**Status: in progress.** The Python interface now produces fractional monetary
-allocations. These are target amounts, not executable trades or share counts.
+**Status: fractional mode complete.** The Python interface and CLI produce
+precise targets and a reconciled display view. These are target amounts, not
+executable trades or share counts.
 Keep whole-share mode outside this first allocation milestone.
 
 - [x] Define the structured allocation result, preserving profile provenance, warnings and disclaimer.
 - [x] Validate a finite positive investment amount and define supported currency labels. Currency labels alone do not perform FX conversion.
-- [ ] Define deterministic display rounding and residual handling so displayed amounts reconcile to the input without editing target weights.
+- [x] Define deterministic display rounding and residual handling so displayed amounts reconcile to the input without editing target weights.
 - [x] Input: investment amount + currency + chosen profile.
 - [x] **Fractional mode (default):** `amount × weight` per ticker. Weights unchanged, so no re-validation issue.
 - [ ] **Whole-share mode (optional):** needs a current price per ticker. Current prices must come from a separate market-data service (e.g. `services/market_data/`), never from `src/`. Rounding down to whole shares leaves residual cash and changes effective weights, so:
   - [ ] recompute effective weights over the invested portion,
   - [ ] re-evaluate return / volatility / Sharpe with `src.portfolio`,
   - [ ] show both the target and the effective portfolio, plus leftover cash.
-- [ ] Hide dust weights (< 0.5% or similar) in display only; keep full precision in calculations.
-- [ ] Fractional-mode tests: invalid amounts/currency, ticker mapping, unchanged weights, full-precision amounts, deterministic rounding, and displayed totals.
+- [x] Optional `--hide-dust` groups weights below 0.5% in display only; retain every ticker in precise targets and report the hidden monetary total.
+- [x] Fractional-mode tests: invalid amounts/currency, ticker mapping, unchanged weights, full-precision amounts, deterministic rounding, and displayed totals.
 - [ ] Whole-share tests, when implemented: integer shares, effective-weight metrics and leftover cash.
 
 ### Phase 3 — Agentic layer (`agent/`)
 
-**Status: planned; not implemented.** No provider or model has been selected.
+**Status: next milestone; not implemented.** GPT-5.4 mini was recommended in
+discussion; no model client is integrated. Confirm the configured model during
+Phase 3 implementation. The local API key is reserved for that integration.
 Phase 1 profile validation checks deterministic inputs; it is not an LLM output
 guardrail. LangGraph would orchestrate steps; the LLM provider/model would supply
 the text generation. These are separate choices.
@@ -282,7 +293,8 @@ FinanceAI/
 │   ├── requirements.txt           # Planned: LLM dependencies only
 │   ├── __main__.py                # Exists: offline profile JSON
 │   ├── profiles.py                # Exists
-│   ├── allocation.py
+│   ├── allocation.py              # Exists: fractional targets
+│   ├── formatting.py              # Exists: monetary display
 │   ├── tools.py
 │   ├── graph.py
 │   ├── explainer.py
@@ -306,6 +318,8 @@ FinanceAI/
     ├── agent/
     │   ├── test_profiles.py
     │   ├── test_allocation.py
+    │   ├── test_formatting.py
+    │   ├── test_cli.py
     │   └── test_guardrails.py
     └── api/
         └── test_endpoints.py
@@ -320,9 +334,9 @@ FinanceAI/
 | High-risk selection rule | Selected: interior volatility midpoint, with explicit overlap fallback | Phase 1 |
 | Concentration limits | Selected: flag only; a future hard cap needs approval | Phases 0–1 |
 | Sharpe in frontier contract | Selected: compute downstream with baseline math | Phases 0–1 |
-| Allocation mode | Next: fractional amounts; whole shares remain an optional later extension | Phase 2 |
+| Allocation mode | Implemented: fractional amounts; whole shares remain an optional later extension | Phase 2 |
 | LLM framework | Proposed: LangGraph; not integrated | Phase 3 |
-| LLM provider and model | Undecided; hosted or local model to be chosen before integration | Phase 3 |
+| LLM provider and model | GPT-5.4 mini recommended; model configuration and integration pending | Phase 3 |
 | GUI stack | React · Streamlit | Phase 5 |
 | Ticker universe | Current 10 US stocks · larger / NSE universe (requires re-download) | All |
 
@@ -337,6 +351,7 @@ python -m pytest -v
 python -m src.main
 python -c "import json; from src.pipeline import run_mpt_analysis; json.dumps(run_mpt_analysis().to_dict(), allow_nan=False); print('JSON contract valid')"
 python -m agent
+python -m agent --amount 10000 --currency USD --profile medium
 git diff --check
 git status
 ```
@@ -367,7 +382,7 @@ decisions, baseline tests, duplicate-GMV cleanup, and profile selection.
 - Concentration is flagged at weights above 40%, or fewer than three holdings
   above 1%. These are display diagnostics, not optimizer constraints.
 - No financial assumptions change and the frozen dataset need not be regenerated.
-- Amount allocation and the LLM workflow follow as subsequent milestones.
+- Fractional amount allocation is now complete. The LLM workflow is next.
 
 ### First milestone delivered
 
@@ -376,8 +391,8 @@ per-asset volatility exports remain deferred. `python -m agent` produces
 profiles offline, including provenance and disclaimers. Tests cover normal and
 sparse frontiers, endpoint concentration, ordering, ticker mapping, invalid
 inputs and copy isolation. The full real-dataset baseline payload was compared
-before and after GMV reuse and matched exactly. Next: Phase 2 fractional amount
-allocation, then Phase 3 read-only tools and LLM explanations.
+before and after GMV reuse and matched exactly. This checkpoint preceded the
+Phase 2 allocation work documented below.
 
 ### Commit checkpoints and next sequence
 
@@ -393,16 +408,16 @@ The completed implementation was pushed as four focused commits:
 Continue on `feature/ai-agentic-features`. Proposed next commits, each with
 relevant tests and updated documentation:
 
-1. Define and implement fractional allocation inputs and the structured result.
-2. Add display rounding and reconciliation while preserving full-precision targets.
-3. Add read-only profile/analysis tools and deterministic explanation templates.
-4. Add output guardrails and a fixed evaluation set.
-5. Integrate the selected model and orchestration with tested offline fallback.
+- [x] Define and implement fractional allocation inputs and the structured result.
+- [x] Add display rounding and reconciliation while preserving full-precision targets.
+- [ ] Add read-only profile/analysis tools and deterministic explanation templates.
+- [ ] Add output guardrails and a fixed evaluation set.
+- [ ] Integrate the selected model and orchestration with tested offline fallback.
 
-Phase 2 exit criteria: no network dependency, unchanged target weights and
+Phase 2 exit criteria met: no network dependency, unchanged target weights and
 portfolio metrics, reconciled displayed amounts, retained provenance, and all
-repository checks passing. Phase 3 model integration remains a later milestone;
-no LLM or framework dependency is needed to begin Phase 2.
+repository checks passing. Phase 3 model integration is the next milestone.
+Phase 2 requires no LLM or framework dependency.
 
 ### Phase 2 implementation checkpoint
 
@@ -413,4 +428,13 @@ are labels only. Inputs require whole cents/paise, positivity, and a maximum of
 Money serializes as decimal strings. Numerical weight-sum drift is reported
 explicitly; target weights are not normalized. Tests cover validation, exact
 products, metadata preservation, stale metrics, isolation, and offline operation.
-Display reconciliation and CLI allocation arguments follow in the next commit.
+Display reconciliation and CLI allocation arguments are also implemented.
+`python -m agent --amount 10000 --currency USD --profile medium` produces precise
+targets plus the display view; the no-argument profile command is unchanged.
+Display-only proportions remove numerical drift, then largest-remainder rounding
+assigns cents/paise with alphabetical ties. Every adjustment is recorded.
+`--hide-dust` groups holdings below 0.5% into a reported total without losing them.
+Money remains decimal strings, including two-decimal display amounts. Tests cover
+one-cent and large amounts, rounding ties, negative numerical dust, hidden totals,
+all profiles, and CLI errors before analysis. All 106 tests and repository checks
+pass; no baseline source, assumptions, dataset, or dependencies were changed.

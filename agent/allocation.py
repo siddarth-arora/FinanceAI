@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, localcontext
 from typing import Any
 
+from agent.formatting import format_allocation_display
 from agent.profiles import ProfileResult, select_profiles
 
 
@@ -26,8 +27,8 @@ class AllocationResult:
     target_amounts: dict[str, Decimal]
     numerical_residual: Decimal
 
-    def to_dict(self) -> dict[str, Any]:
-        """Return detached JSON data without rounding the monetary targets."""
+    def to_dict(self, *, hide_dust: bool = False) -> dict[str, Any]:
+        """Return precise targets plus a separate reconciled display view."""
         return {
             "mode": "fractional",
             "amount": format(self.amount, "f"),
@@ -38,6 +39,9 @@ class AllocationResult:
                 for ticker, value in self.target_amounts.items()
             },
             "numerical_residual": format(self.numerical_residual, "f"),
+            "display": format_allocation_display(
+                self.amount, self.target_amounts, hide_dust=hide_dust,
+            ),
             "notice": (
                 "Target monetary allocations only; no trades, share counts, "
                 "live prices, or currency conversion. Portfolio metrics describe "
