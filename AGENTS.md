@@ -100,10 +100,35 @@ Rules for consumers:
 If an API is later added, the endpoint should call `run_mpt_analysis()` and
 serialize `result.to_dict()`. It should not duplicate the MPT workflow.
 
-If an agentic layer is later added, place it in a separate package or service.
-Its role may include explaining tradeoffs, filtering already-computed efficient
-candidates, and formatting results. It must not silently change weights,
-constraints, expected returns, covariance, or the configured risk-free rate.
+## Downstream implementation status and handoff
+
+`agent/` currently contains deterministic profile selection only. It calls no
+LLM and has no model provider, prompts, or LLM dependencies configured.
+`agent/__main__.py` calls the supported pipeline, selects profiles, and prints
+JSON; `agent/profiles.py` exposes `select_profiles(payload)` and `ProfileResult`.
+
+Consumers should use `select_profiles(run_mpt_analysis().to_dict())` and
+`ProfileResult.to_dict()` rather than parsing the profile CLI. Preserve the
+profile's metadata, selection rule, diversification diagnostics, warnings, and
+disclaimer when passing it downstream. Profiles may overlap, and medium is a
+sampled approximation to Maximum Sharpe, not necessarily the exact optimum.
+
+The next milestone is deterministic fractional amount allocation in
+`agent/allocation.py`. Keep target weights unchanged and distinguish calculated
+amounts from rounded display amounts. Currency input must not imply an FX
+conversion or live-price lookup. Whole-share allocation remains an optional
+later extension requiring effective-weight validation as described above.
+
+Future LLM orchestration belongs in `agent/` or a separate service, with its
+dependencies separate from the baseline requirements. Its role may include
+explaining tradeoffs, filtering already-computed efficient candidates, and
+formatting results. It must not silently change weights, constraints, expected
+returns, covariance, or the configured risk-free rate. LangGraph is proposed in
+the roadmap; the provider and model remain undecided.
+
+See `ROADMAP.md` for completed and planned milestones. Continue the established
+workflow of small validated commits on `feature/ai-agentic-features`; update the
+README and roadmap when a milestone changes the supported behavior.
 
 ## Required checks before completing a change
 

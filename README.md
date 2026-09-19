@@ -9,6 +9,15 @@ efficient portfolios with constrained numerical optimization.
 The numerical MPT layer is independent from the downstream `agent/` package
 and future LLM or user-interface code.
 
+**Current milestone:** baseline hardening (Phase 0) and deterministic risk
+profiles (Phase 1) are complete. Despite its name, `agent/` currently calls no
+LLM. No model provider, model name, API key, or LLM SDK is configured. LangGraph
+is proposed for Phase 3 and is not installed by this project's requirements.
+
+The next milestone is fractional amount allocation (Phase 2), followed by LLM
+explanations and guardrails (Phase 3). See [ROADMAP.md](ROADMAP.md) for progress,
+remaining decisions, and the sequence of small feature-branch commits.
+
 ## Current scope
 
 Implemented:
@@ -30,7 +39,9 @@ Implemented:
 
 Not implemented:
 
+- Amount-based allocation, share counts, or currency conversion
 - LLM explanations, agent orchestration, or RAG
+- API service or GUI
 - Machine learning or return prediction
 - Sentiment or news analysis
 - Black-Litterman or CAPM return estimation
@@ -355,6 +366,11 @@ requires no LLM, API key, network connection, or additional dependencies:
 python -m agent
 ```
 
+`agent/__main__.py` calls `run_mpt_analysis().to_dict()`, passes the result to
+`agent.profiles.select_profiles()`, and prints JSON. `agent/profiles.py` applies
+fixed selection rules and uses `src.portfolio` to validate metrics and compute
+Sharpe. No prompts, model calls, or agent framework run in either file.
+
 It prints full-precision JSON for three relative in-sample risk profiles. To use
 these in another Python component:
 
@@ -409,10 +425,30 @@ python -m pytest -v
 
 Tests cover portfolio mathematics, arithmetic returns and sample covariance,
 local dataset validation, optimizer feasibility and frontier ordering, and the
-JSON pipeline contract. Synthetic inputs and temporary Parquet fixtures keep
-the suite independent of live data and the git-ignored frozen dataset. The
+JSON pipeline contract. Profile tests cover selection rules, ordering,
+concentration and overlap warnings, ticker mapping, configured risk-free rates,
+invalid inputs, provenance, and copy isolation. Synthetic inputs and temporary
+Parquet fixtures keep the suite independent of live data and the git-ignored
+frozen dataset. The
 pipeline test rejects network connections and verifies that analysis leaves
 the input file unchanged.
+
+The Phase 0–1 checkpoint has 46 passing tests. Before completing each change,
+run the repository checks with the virtual environment active:
+
+```bash
+python -m pytest -v
+python -m src.main
+python -c "import json; from src.pipeline import run_mpt_analysis; json.dumps(run_mpt_analysis().to_dict(), allow_nan=False); print('JSON contract valid')"
+python -m agent
+git diff --check
+git status
+```
+
+Tests use synthetic data; the two CLI commands and the JSON contract check use
+the frozen local Parquet file. They do not download or regenerate it. Continue
+development on `feature/ai-agentic-features` with a focused, validated commit for
+each step. Implementation boundaries are documented in [AGENTS.md](AGENTS.md).
 
 ## Reproducibility and limitations
 
