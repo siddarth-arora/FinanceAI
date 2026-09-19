@@ -11,11 +11,10 @@ and future LLM or user-interface code.
 
 **Current milestone:** baseline hardening (Phase 0), deterministic risk
 profiles (Phase 1), and fractional amount allocation (Phase 2) are complete.
-Despite its name, `agent/` currently calls no LLM. No model client or LLM SDK is
-integrated; a local API key is not used yet. LangGraph is proposed for Phase 3
-and is not installed by this project's requirements.
-
-The next milestone is read-only tools, LLM explanations and guardrails (Phase 3).
+Phase 3 is in progress: read-only tools, deterministic explanations, guardrails,
+and the optional Groq Responses adapter are implemented. The model selects
+approved fact references; Python renders the corresponding financial statements.
+The baseline and original profile/allocation commands remain offline.
 See [ROADMAP.md](ROADMAP.md) for progress,
 remaining decisions, and the sequence of small feature-branch commits.
 
@@ -241,12 +240,27 @@ python -c "import numpy, pandas, pyarrow, scipy, matplotlib, yfinance, pytest; p
 
 ## Local API-key storage
 
-Store a future OpenAI API key in `.env` at the repository root using
-`OPENAI_API_KEY=your_key_here`. This file and `.env.*` variants are ignored by
-Git; `.env.example` is reserved for a template containing no secrets. On a fresh
-clone, create `.env` locally if needed. The current deterministic commands do
-not load this file or call an LLM; environment loading will be added with the
-LLM integration.
+Store `GROQ_API_KEY=your_key_here` in `.env` at the repository root. An optional
+`GROQ_MODEL` defaults to `openai/gpt-oss-20b`. Shell environment values take
+precedence over `.env`. `OPENAI_API_KEY` is not used by the Groq adapter.
+The ignored `.env` and `.env.*` files remain local; `.env.example` is a tracked
+template without secrets. Only explicit LLM use loads these settings.
+
+Install the optional client/framework dependencies separately:
+
+```bash
+python -m pip install -r agent/requirements.txt
+```
+
+`agent/provider.py` uses the OpenAI SDK with Groq's
+`https://api.groq.com/openai/v1` endpoint and `client.responses.create()`.
+Tool retrieval and strict structured output use separate requests, following
+[Groq's Responses API](https://console.groq.com/docs/responses-api) and
+[structured-output limitations](https://console.groq.com/docs/structured-outputs).
+Each explanation uses at most two requests, with a 30-second timeout per
+request, no SDK retries, and at most four read-only tool calls. Provider errors
+are reduced to stable codes; API keys and raw provider error bodies are not
+included in results. Local dataset paths are omitted from tool data sent to Groq.
 
 ## Create the frozen dataset
 
@@ -558,8 +572,7 @@ comparison with all profiles, warnings, provenance and the historical disclaimer
 `agent.cache.load_analysis()` caches the baseline payload per process and frozen
 file stat; clear the cache or restart after configuration changes.
 
-The requested LLM integration is Groq's Responses API with
-`openai/gpt-oss-20b` and `GROQ_API_KEY`. It is being implemented separately from
-baseline calculations. The model will choose approved facts, while deterministic
-code renders the financial statements. Guardrails and live calls follow in the
-next commits.
+The Groq Responses adapter uses `openai/gpt-oss-20b` and `GROQ_API_KEY`.
+It chooses approved facts while deterministic code renders financial statements.
+Live checks succeeded for a general comparison and a frontier-point tool call.
+The next checkpoint exposes this through the LangGraph workflow and CLI.

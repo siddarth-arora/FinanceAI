@@ -1,0 +1,4 @@
+# Optional agent dependencies; install baseline requirements separately.
+openai==3.16.2
+langgraph==1.2.11
+python-dotenv==1.2.3

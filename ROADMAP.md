@@ -456,3 +456,9 @@ The second checkpoint validates model reference plans and exact rendered output,
 including mandatory provenance and warnings. Three fixed synthetic payloads
 exercise ordinary comparisons, concentration, and unsupported forecasts in CI.
 All 137 tests pass at this checkpoint; live integration follows separately.
+
+The third checkpoint adds the Groq Responses adapter, optional pinned
+dependencies, prompt, and secret-free environment template. Tool retrieval and
+strict JSON plans use separate bounded requests. Live checks passed with
+`openai/gpt-oss-20b`, including `get_frontier_point(2)`. The next checkpoint
+connects the adapter to the explanation workflow and CLI.
