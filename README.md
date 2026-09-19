@@ -62,6 +62,12 @@ data_loader.py -> returns.py -> portfolio.py -> optimizer.py
 `src.pipeline.run_mpt_analysis()` is the supported programmatic integration
 boundary. `src.main` is the human-facing command-line entry point.
 
+The pipeline solves GMV once and passes the same weights into frontier generation.
+Standalone calls to `generate_efficient_frontier()` still solve GMV themselves;
+its optional `gmv_weights` argument is reserved for the unmodified GMV result
+computed with the same covariance matrix. Reuse changes no financial assumptions
+or serialized results and does not require regenerating the frozen dataset.
+
 ## Project structure
 
 ```text

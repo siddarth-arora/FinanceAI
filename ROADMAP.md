@@ -80,7 +80,7 @@ These are gaps worth fixing before building on top of the baseline.
 2. **The top of the frontier is a single stock.** The last frontier point targets `max(μ)`, which with long-only constraints is 100% in the highest-return asset (a synthetic run confirmed this). A "high risk" option taken naively from the end of the frontier would be an undiversified one-stock portfolio. See Section 4.2.
 3. **Max Sharpe is not guaranteed to be one of the 50 frontier points.** It lies on the frontier curve but usually between sampled points. Selection logic must decide whether to use `portfolios.maximum_sharpe` directly or the nearest frontier point.
 4. **Test coverage is limited to `portfolio.py`.** No tests exist for `returns.py`, `optimizer.py`, `pipeline.py`, `data_loader.py` or the JSON contract.
-5. **GMV is computed twice** per run (once in `run_mpt_analysis`, once inside `generate_efficient_frontier`). Harmless, but relevant once an API calls the pipeline often; caching the result is the simpler fix.
+5. **Resolved: duplicate GMV solve.** The pipeline passes its computed GMV weights into frontier generation. Standalone frontier calls still solve GMV themselves; regression tests verify identical values and one solve per pipeline run.
 6. **`metadata.dataset_path` is an absolute local path.** Fine for CLI, but an API should not expose server filesystem paths to clients.
 7. **No stock-level descriptive data** (names, sectors, per-asset volatility, price history) is in the payload, yet the GUI needs it to "show the user all the stocks". Per-asset volatility is derivable from the diagonal of `annual_covariance`; names and sectors need a static metadata file.
 

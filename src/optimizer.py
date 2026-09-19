@@ -276,8 +276,15 @@ def generate_efficient_frontier(
     expected_returns: ArrayLike,
     covariance_matrix: ArrayLike,
     number_of_points: int,
+    *,
+    gmv_weights: ArrayLike | None = None,
 ) -> list[EfficientFrontierPoint]:
-    """Generate the efficient upper branch using target-return optimization."""
+    """Generate the efficient upper branch using target-return optimization.
+
+    A caller that already solved GMV for this same covariance matrix may pass
+    its weights to avoid a duplicate solve. These must be the unmodified output
+    of optimize_global_minimum_variance, not an arbitrary feasible portfolio.
+    """
     if not isinstance(number_of_points, int) or isinstance(number_of_points, bool):
         raise TypeError("Number of frontier points must be an integer.")
     if number_of_points < 2:
@@ -293,8 +300,11 @@ def generate_efficient_frontier(
         raise ValueError("Expected returns must contain only finite values.")
 
     covariance = np.asarray(covariance_matrix, dtype=float)
-    gmv_result = optimize_global_minimum_variance(covariance)
-    gmv_return = calculate_portfolio_return(gmv_result.x, return_vector)
+    if gmv_weights is None:
+        gmv_weights = optimize_global_minimum_variance(covariance).x
+    gmv_weight_vector = validate_weights(gmv_weights, len(return_vector)).copy()
+    calculate_portfolio_variance(gmv_weight_vector, covariance)
+    gmv_return = calculate_portfolio_return(gmv_weight_vector, return_vector)
     maximum_return = float(return_vector.max())
 
     target_returns = np.linspace(gmv_return, maximum_return, number_of_points)
@@ -303,7 +313,7 @@ def generate_efficient_frontier(
 
     for point_number, target_return in enumerate(target_returns, start=1):
         if not frontier:
-            starting_weights = np.asarray(gmv_result.x, dtype=float)
+            starting_weights = gmv_weight_vector
         else:
             previous_point = frontier[-1]
             step_fraction = (target_return - previous_point.expected_return) / (

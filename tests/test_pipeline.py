@@ -2,6 +2,7 @@
 
 import json
 import socket
+from unittest.mock import patch
 
 import pytest
 
@@ -19,7 +20,15 @@ def test_pipeline_json_contract_is_offline_and_preserves_dataset(monkeypatch, pa
     monkeypatch.setattr(pipeline, "RAW_PRICES_PATH", parquet_path)
     monkeypatch.setattr(pipeline, "FRONTIER_POINTS", 8)
     before = parquet_path.read_bytes()
-    payload = pipeline.run_mpt_analysis().to_dict()
+    with patch.object(
+        pipeline, "optimize_global_minimum_variance",
+        wraps=pipeline.optimize_global_minimum_variance,
+    ) as solve_gmv, patch(
+        "src.optimizer.optimize_global_minimum_variance",
+        side_effect=AssertionError("Frontier must reuse pipeline GMV"),
+    ):
+        payload = pipeline.run_mpt_analysis().to_dict()
+    assert solve_gmv.call_count == 1
     assert json.loads(json.dumps(payload, allow_nan=False)) == payload
     assert set(payload) == {"metadata", "annual_expected_returns", "annual_covariance",
                             "portfolios", "efficient_frontier"}

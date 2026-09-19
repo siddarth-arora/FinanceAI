@@ -150,6 +150,7 @@ def run_mpt_analysis() -> MPTAnalysisResult:
         annual_expected_returns,
         annual_covariance,
         FRONTIER_POINTS,
+        gmv_weights=gmv_optimization.x,
     )
 
     asset_names = tuple(str(ticker) for ticker in prices.columns)
@@ -211,4 +212,3 @@ def _evaluate_portfolio(
             for ticker, weight in zip(asset_names, weight_vector, strict=True)
         },
     )
-
