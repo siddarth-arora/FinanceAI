@@ -451,3 +451,8 @@ validation, then a LangGraph workflow and the Groq client. Model explanations
 will select and organize approved fact IDs; Python renders their associated
 figures and sentences. This intentionally constrains wording so model-generated
 numbers, tickers, predictions, or changed weights cannot enter final text.
+
+The second checkpoint validates model reference plans and exact rendered output,
+including mandatory provenance and warnings. Three fixed synthetic payloads
+exercise ordinary comparisons, concentration, and unsupported forecasts in CI.
+All 137 tests pass at this checkpoint; live integration follows separately.

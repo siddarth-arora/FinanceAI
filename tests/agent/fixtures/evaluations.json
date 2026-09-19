@@ -1,0 +1,309 @@
+[
+  {
+    "name": "historical_comparison",
+    "payload": {
+      "metadata": {
+        "assets": [
+          "A",
+          "B",
+          "C"
+        ],
+        "dataset_path": "/fixture/prices.parquet",
+        "start_date": "2024-01-01",
+        "end_date": "2024-12-31",
+        "trading_days": 252,
+        "risk_free_rate": 0.04,
+        "constraints": {
+          "fully_invested": true,
+          "long_only": true,
+          "leverage_allowed": false
+        }
+      },
+      "annual_expected_returns": {
+        "A": 0.06,
+        "B": 0.12,
+        "C": 0.2
+      },
+      "annual_covariance": {
+        "A": {
+          "A": 0.01,
+          "B": 0.0,
+          "C": 0.0
+        },
+        "B": {
+          "A": 0.0,
+          "B": 0.04,
+          "C": 0.0
+        },
+        "C": {
+          "A": 0.0,
+          "B": 0.0,
+          "C": 0.09
+        }
+      },
+      "portfolios": {
+        "maximum_sharpe": {
+          "volatility": 0.1204650647786309
+        }
+      },
+      "efficient_frontier": [
+        {
+          "expected_return": 0.08244897281324819,
+          "variance": 0.007346938775510937,
+          "volatility": 0.08571428571428999,
+          "weights": {
+            "A": 0.7346939955250895,
+            "B": 0.18367334766549104,
+            "C": 0.08163265680941943
+          }
+        },
+        {
+          "expected_return": 0.11183672960993613,
+          "variance": 0.010957719723051908,
+          "volatility": 0.10467912744693618,
+          "weights": {
+            "A": 0.45887028406774844,
+            "B": 0.2990178827572387,
+            "C": 0.24211183317501295
+          }
+        },
+        {
+          "expected_return": 0.1412244864066241,
+          "variance": 0.021790065897133122,
+          "volatility": 0.14761458565173402,
+          "weights": {
+            "A": 0.18304662626506618,
+            "B": 0.41436232395333317,
+            "C": 0.4025910497816007
+          }
+        },
+        {
+          "expected_return": 0.17061224320331206,
+          "variance": 0.04142023977625933,
+          "volatility": 0.2035196299531309,
+          "weights": {
+            "A": 0.0,
+            "B": 0.36734695995859956,
+            "C": 0.6326530400414005
+          }
+        },
+        {
+          "expected_return": 0.2,
+          "variance": 0.09,
+          "volatility": 0.3,
+          "weights": {
+            "A": 0.0,
+            "B": 0.0,
+            "C": 1.0
+          }
+        }
+      ]
+    },
+    "plan": {
+      "status": "supported",
+      "fact_ids": [
+        "profile.medium.selection",
+        "asset.A"
+      ]
+    },
+    "expected_status": "supported",
+    "required_facts": [
+      "profile.low.summary",
+      "profile.medium.summary",
+      "profile.high.summary",
+      "asset.A"
+    ]
+  },
+  {
+    "name": "concentrated_endpoint",
+    "payload": {
+      "metadata": {
+        "assets": [
+          "A",
+          "B",
+          "C"
+        ],
+        "dataset_path": "/fixture/prices.parquet",
+        "start_date": "2024-01-01",
+        "end_date": "2024-12-31",
+        "trading_days": 252,
+        "risk_free_rate": 0.04,
+        "constraints": {
+          "fully_invested": true,
+          "long_only": true,
+          "leverage_allowed": false
+        }
+      },
+      "annual_expected_returns": {
+        "A": 0.06,
+        "B": 0.12,
+        "C": 0.2
+      },
+      "annual_covariance": {
+        "A": {
+          "A": 0.01,
+          "B": 0.0,
+          "C": 0.0
+        },
+        "B": {
+          "A": 0.0,
+          "B": 0.04,
+          "C": 0.0
+        },
+        "C": {
+          "A": 0.0,
+          "B": 0.0,
+          "C": 0.09
+        }
+      },
+      "portfolios": {
+        "maximum_sharpe": {
+          "volatility": 0.3
+        }
+      },
+      "efficient_frontier": [
+        {
+          "expected_return": 0.08244897281324819,
+          "variance": 0.007346938775510937,
+          "volatility": 0.08571428571428999,
+          "weights": {
+            "A": 0.7346939955250895,
+            "B": 0.18367334766549104,
+            "C": 0.08163265680941943
+          }
+        },
+        {
+          "expected_return": 0.11183672960993613,
+          "variance": 0.010957719723051908,
+          "volatility": 0.10467912744693618,
+          "weights": {
+            "A": 0.45887028406774844,
+            "B": 0.2990178827572387,
+            "C": 0.24211183317501295
+          }
+        },
+        {
+          "expected_return": 0.1412244864066241,
+          "variance": 0.021790065897133122,
+          "volatility": 0.14761458565173402,
+          "weights": {
+            "A": 0.18304662626506618,
+            "B": 0.41436232395333317,
+            "C": 0.4025910497816007
+          }
+        },
+        {
+          "expected_return": 0.17061224320331206,
+          "variance": 0.04142023977625933,
+          "volatility": 0.2035196299531309,
+          "weights": {
+            "A": 0.0,
+            "B": 0.36734695995859956,
+            "C": 0.6326530400414005
+          }
+        },
+        {
+          "expected_return": 0.2,
+          "variance": 0.09,
+          "volatility": 0.3,
+          "weights": {
+            "A": 0.0,
+            "B": 0.0,
+            "C": 1.0
+          }
+        }
+      ]
+    },
+    "plan": {
+      "status": "supported",
+      "fact_ids": [
+        "profile.high.weights"
+      ]
+    },
+    "expected_status": "supported",
+    "required_facts": [
+      "profile.high.warnings",
+      "profile.medium.warnings"
+    ]
+  },
+  {
+    "name": "unsupported_forecast",
+    "payload": {
+      "metadata": {
+        "assets": [
+          "A",
+          "B",
+          "C"
+        ],
+        "dataset_path": "/fixture/prices.parquet",
+        "start_date": "2024-01-01",
+        "end_date": "2024-12-31",
+        "trading_days": 252,
+        "risk_free_rate": 0.04,
+        "constraints": {
+          "fully_invested": true,
+          "long_only": true,
+          "leverage_allowed": false
+        }
+      },
+      "annual_expected_returns": {
+        "A": 0.06,
+        "B": 0.12,
+        "C": 0.2
+      },
+      "annual_covariance": {
+        "A": {
+          "A": 0.01,
+          "B": 0.0,
+          "C": 0.0
+        },
+        "B": {
+          "A": 0.0,
+          "B": 0.04,
+          "C": 0.0
+        },
+        "C": {
+          "A": 0.0,
+          "B": 0.0,
+          "C": 0.09
+        }
+      },
+      "portfolios": {
+        "maximum_sharpe": {
+          "volatility": 0.1204650647786309
+        }
+      },
+      "efficient_frontier": [
+        {
+          "expected_return": 0.08244897281324819,
+          "variance": 0.007346938775510937,
+          "volatility": 0.08571428571428999,
+          "weights": {
+            "A": 0.7346939955250895,
+            "B": 0.18367334766549104,
+            "C": 0.08163265680941943
+          }
+        },
+        {
+          "expected_return": 0.2,
+          "variance": 0.09,
+          "volatility": 0.3,
+          "weights": {
+            "A": 0.0,
+            "B": 0.0,
+            "C": 1.0
+          }
+        }
+      ]
+    },
+    "plan": {
+      "status": "unsupported",
+      "fact_ids": []
+    },
+    "expected_status": "unsupported",
+    "required_facts": [
+      "profile.low.summary",
+      "profile.high.warnings"
+    ]
+  }
+]
