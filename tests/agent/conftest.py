@@ -6,6 +6,16 @@ from src.optimizer import generate_efficient_frontier, optimize_maximum_sharpe_r
 from src.portfolio import calculate_portfolio_volatility
 
 
+@pytest.fixture(autouse=True)
+def prevent_network(monkeypatch):
+    import socket
+
+    def blocked(*args, **kwargs):
+        raise AssertionError('Agent tests must not use the network.')
+
+    monkeypatch.setattr(socket.socket, 'connect', blocked)
+
+
 @pytest.fixture
 def payload(synthetic_market):
     returns, covariance = synthetic_market

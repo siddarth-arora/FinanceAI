@@ -3,11 +3,17 @@ on: [push, pull_request]
 jobs:
   baseline:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        agent-dependencies: [false, true]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
       - run: python -m pip install -r requirements.txt
+      - if: matrix.agent-dependencies
+        run: python -m pip install -r agent/requirements.txt
+      - run: python -m pip check
       - run: python -m pytest -v
       - run: git diff --check

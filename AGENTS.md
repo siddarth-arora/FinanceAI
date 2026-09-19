@@ -102,12 +102,27 @@ serialize `result.to_dict()`. It should not duplicate the MPT workflow.
 
 ## Downstream implementation status and handoff
 
-`agent/` currently contains deterministic profile selection and fractional
-allocation with display reconciliation. Both run offline. It calls no
-LLM and has no model provider, prompts, or LLM dependencies configured.
-`agent/__main__.py` calls the supported pipeline and prints profile JSON, or
-allocation JSON when `--amount` is supplied; `agent/profiles.py` exposes
-`select_profiles(payload)` and `ProfileResult`.
+`agent/` contains deterministic profiles, fractional allocation, read-only tools,
+and grounded explanations. Original profile/allocation commands and `--explain`
+run offline. Only `--explain --llm` enables Groq Responses calls using the OpenAI
+SDK, `GROQ_API_KEY`, and default model `openai/gpt-oss-20b`. Keep `.env` ignored;
+never log credentials or provider error bodies. Optional dependencies belong in
+`agent/requirements.txt`, not the baseline requirements.
+
+`agent.graph.run_agent()` loads a cached pipeline snapshot (or an explicit
+payload), builds profiles, optionally allocates, explains, then validates.
+LangGraph orchestrates these nodes when installed; the same nodes can run
+sequentially without it. Missing credentials/dependencies and invalid model
+responses return a labelled general fallback. Baseline and allocation errors
+must propagate. Do not present a fallback as answering a follow-up question.
+
+`agent.tools.AnalysisTools` exposes only four read-only operations. The model
+selects approved fact IDs; `explainer.py` renders their statements and
+`guardrails.py` verifies the plan and exact output. Always preserve mandatory
+profile metrics, warnings, provenance and disclaimer. Do not accept raw model
+prose or introduce financial calculations in the model. Tool retrieval and
+structured plans use separate Groq requests, bounded to two requests and four
+tool calls per explanation. Strip local dataset paths from model-bound tool data.
 
 Consumers should use `select_profiles(run_mpt_analysis().to_dict())` and
 `ProfileResult.to_dict()` rather than parsing the profile CLI. Preserve the
@@ -127,12 +142,12 @@ must never change the target weights or historical metrics. Display amounts are
 not effective traded weights. Whole-share allocation remains an optional
 later extension requiring effective-weight validation as described above.
 
-Future LLM orchestration belongs in `agent/` or a separate service, with its
+LLM orchestration belongs in `agent/` or a separate service, with its
 dependencies separate from the baseline requirements. Its role may include
 explaining tradeoffs, filtering already-computed efficient candidates, and
 formatting results. It must not silently change weights, constraints, expected
-returns, covariance, or the configured risk-free rate. LangGraph is proposed in
-the roadmap; the provider and model remain undecided.
+returns, covariance, or the configured risk-free rate. Additional providers or
+models need explicit configuration and their own compatibility checks.
 
 See `ROADMAP.md` for completed and planned milestones. Continue the established
 workflow of small validated commits on `feature/ai-agentic-features`; update the

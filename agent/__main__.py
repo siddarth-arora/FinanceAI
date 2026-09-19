@@ -1,4 +1,4 @@
-"""Inspect deterministic profiles and allocations using the frozen dataset."""
+"""Inspect profiles, allocations and optional grounded explanations."""
 
 import argparse
 import json
@@ -20,7 +20,14 @@ def main(argv: list[str] | None = None) -> None:
         "--hide-dust", action="store_true",
         help="Group display holdings below 0.5%%; retain exact targets",
     )
+    parser.add_argument("--explain", action="store_true", help="Include an offline explanation")
+    parser.add_argument("--llm", action="store_true", help="With --explain, enable Groq API calls")
+    parser.add_argument("--question", help="With --explain --llm, ask about existing historical results")
     args = parser.parse_args(argv)
+    if (args.llm or args.question is not None) and not args.explain:
+        parser.error("--llm and --question require --explain")
+    if args.question is not None and not args.llm:
+        parser.error("--question requires --llm; offline mode provides a general comparison")
     allocation_options = (
         args.currency is not None or args.profile is not None or args.hide_dust
     )
@@ -33,11 +40,21 @@ def main(argv: list[str] | None = None) -> None:
         except ValueError as error:
             parser.error(str(error))
 
-    payload = run_mpt_analysis().to_dict()
-    if args.amount is None:
+    if args.explain:
+        from agent.graph import run_agent, validate_question
+        try:
+            validate_question(args.question)
+        except ValueError as error:
+            parser.error(str(error))
+        output = run_agent(amount=args.amount, currency=currency,
+                           profile=args.profile or "medium", hide_dust=args.hide_dust,
+                           question=args.question, use_llm=args.llm)
+    elif args.amount is None:
+        payload = run_mpt_analysis().to_dict()
         profiles = select_profiles(payload)
         output = {name: profile.to_dict() for name, profile in profiles.items()}
     else:
+        payload = run_mpt_analysis().to_dict()
         allocation = allocate_amount(
             args.amount, currency, payload, args.profile or "medium",
         )

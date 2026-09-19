@@ -44,6 +44,9 @@ def test_allocation_arguments_return_structured_output(payload, monkeypatch, cap
     ["--amount", "10", "--currency", ""],
     ["--amount", "10", "--currency", " "],
     ["--amount", "10", "--profile", "unknown"],
+    ["--llm"], ["--question", "Explain"], ["--explain", "--question", "Explain"],
+    ["--explain", "--llm", "--question", ""],
+    ["--explain", "--llm", "--question", "x" * 2001],
 ])
 def test_invalid_arguments_fail_before_analysis(monkeypatch, capsys, args):
     run = Mock(side_effect=AssertionError("Analysis should not run"))
@@ -53,3 +56,22 @@ def test_invalid_arguments_fail_before_analysis(monkeypatch, capsys, args):
     assert error.value.code == 2
     assert "error:" in capsys.readouterr().err
     run.assert_not_called()
+
+
+def test_explanation_cli_forwards_validated_options(monkeypatch, capsys):
+    from agent import graph
+    run = Mock(return_value={'explanation': {'mode': 'offline'}})
+    monkeypatch.setattr(graph, 'run_agent', run)
+    cli.main(['--explain', '--amount', '1000', '--currency', 'INR', '--hide-dust'])
+    assert json.loads(capsys.readouterr().out)['explanation']['mode'] == 'offline'
+    run.assert_called_once_with(amount='1000', currency='INR', profile='medium',
+                                hide_dust=True, question=None, use_llm=False)
+
+
+def test_llm_cli_requires_explicit_opt_in(monkeypatch, capsys):
+    from agent import graph
+    run = Mock(return_value={'explanation': {'mode': 'llm'}})
+    monkeypatch.setattr(graph, 'run_agent', run)
+    cli.main(['--explain', '--llm', '--question', 'Explain the high profile'])
+    assert run.call_args.kwargs['use_llm'] is True
+    assert run.call_args.kwargs['question'] == 'Explain the high profile'

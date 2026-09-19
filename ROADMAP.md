@@ -5,18 +5,19 @@
 > GUI. This document follows the working contract in `AGENTS.md`; every planned item
 > below is placed so that it does **not** break that contract.
 
-**Current checkpoint:** Phase 0 required work, Phase 1, and fractional Phase 2
-are complete on `feature/ai-agentic-features` (106 passing tests). The `agent/`
-package is plain Python: it calls no LLM and has no model client, prompts, or LLM SDK integrated.
-A local `.env` may store a key for future use; current commands do not load it.
-LangGraph is a Phase 3 proposal, not a current dependency.
+**Current checkpoint:** Phase 0 required work, Phase 1, fractional Phase 2, and
+Phase 3 are complete on `feature/ai-agentic-features` (184 passing tests with
+optional dependencies installed). Groq Responses calls use `openai/gpt-oss-20b`
+through the OpenAI SDK, with LangGraph orchestration. Model-selected fact IDs
+are rendered and validated in Python. LLM calls require explicit opt-in;
+baseline, profiles, allocations, and default explanations remain offline.
 
 | Milestone | Status | Next action |
 | --- | --- | --- |
 | Phase 0: baseline hardening | Complete; optional display metadata deferred | Preserve the verified numerical baseline |
 | Phase 1: deterministic profiles | Complete | Consume the existing structured profile contract |
 | Phase 2: fractional allocation | Complete; optional whole shares deferred | Consume exact targets and reconciled display |
-| Phase 3: LLM explanations | Next; not implemented | Add read-only tools and fallback, then choose provider/model |
+| Phase 3: LLM explanations | Complete | Preserve grounded facts and explicit offline fallback |
 | Phases 4–6: API, GUI, research | Planned; not implemented | Build after the profile and allocation contracts stabilize |
 
 ---
@@ -62,9 +63,17 @@ FinanceAI/
 │   └── main.py                # CLI summary + figure
 ├── agent/
 │   ├── profiles.py            # Deterministic sampled-profile selection
-│   ├── __main__.py            # Offline profile/allocation JSON
+│   ├── __main__.py            # Profiles, allocations, opt-in LLM explanations
 │   ├── allocation.py          # Exact fractional monetary targets
-│   └── formatting.py          # Reconciled monetary display
+│   ├── formatting.py          # Reconciled monetary display
+│   ├── tools.py               # Read-only snapshot operations
+│   ├── cache.py               # Isolated cached pipeline payload
+│   ├── explainer.py           # Approved facts and deterministic rendering
+│   ├── guardrails.py          # Plan and exact output validation
+│   ├── provider.py            # Bounded Groq Responses requests
+│   ├── graph.py               # LangGraph nodes and sequential fallback
+│   ├── requirements.txt       # Optional SDK/framework dependencies
+│   └── prompts/system.md
 └── tests/
     ├── test_portfolio.py
     ├── test_returns.py
@@ -75,7 +84,12 @@ FinanceAI/
         ├── test_profiles.py
         ├── test_allocation.py
         ├── test_formatting.py
-        └── test_cli.py
+        ├── test_cli.py
+        ├── test_tools.py
+        ├── test_guardrails.py
+        ├── test_provider.py
+        ├── test_graph.py
+        └── fixtures/evaluations.json
 ```
 
 ### 2.2 Feature status
@@ -94,7 +108,7 @@ FinanceAI/
 | Frontier plot | ✅ Done | Static PNG |
 | CLI | ✅ Done | `python -m src.main` |
 | Unit tests | ✅ Baseline covered | Synthetic tests for portfolio math, returns, loader, optimizer and JSON pipeline |
-| Agentic layer | 🟡 Foundation ready | Deterministic consumer package; LLM workflow remains Phase 3 |
+| Agentic layer | ✅ Phase 3 done | Groq, LangGraph, read-only tools, approved fact references and offline fallback |
 | Risk profiles (low / medium / high) | ✅ Done | Sampled candidates, provenance, concentration and overlap flags |
 | Amount-based allocation | ✅ Fractional mode done | Exact targets, reconciled display, USD/INR labels, CLI; whole shares deferred |
 | API service | ❌ Not started | — |
@@ -143,8 +157,8 @@ api/  (FastAPI)  ──►  gui/  (web front end)
 
 Key principle: **baseline portfolio calculations remain in `src/`.** Downstream
 code may call those evaluators and deterministically convert weights into amounts.
-The future LLM receives already-computed profiles and allocations and writes
-prose around them; it never calculates or modifies financial figures.
+The LLM receives already-computed facts and selects references; Python renders
+the corresponding statements. It never calculates or modifies financial figures.
 
 ---
 
@@ -212,33 +226,40 @@ Keep whole-share mode outside this first allocation milestone.
 
 ### Phase 3 — Agentic layer (`agent/`)
 
-**Status: next milestone; not implemented.** GPT-5.4 mini was recommended in
-discussion; no model client is integrated. Confirm the configured model during
-Phase 3 implementation. The local API key is reserved for that integration.
-Phase 1 profile validation checks deterministic inputs; it is not an LLM output
-guardrail. LangGraph would orchestrate steps; the LLM provider/model would supply
-the text generation. These are separate choices.
+**Status: complete.** At the user's request, use Groq's OpenAI-compatible
+Responses endpoint with `openai/gpt-oss-20b`, configured with `GROQ_API_KEY`.
+This supersedes the earlier OpenAI-hosted model recommendation. LangGraph
+orchestrates the workflow; the LLM selects approved facts, which Python renders.
+The client and framework dependencies are optional and isolated from `src/`.
 
 The LLM's allowed role per `AGENTS.md`: explain trade-offs, filter already-computed candidates, format results.
 
-- [ ] Choose and document a provider and model, configuration, credentials, and failure behavior before implementing live model calls.
-- [ ] Implement and test the read-only tools and deterministic explanation fallback independently of a hosted model.
-- [ ] **Proposed framework:** LangGraph (not yet installed or integrated), with a small graph:
+- [x] Document Groq endpoint, model, credentials, bounded requests, and failure behavior.
+- [x] Implement and test the read-only tools and deterministic explanation fallback independently of a hosted model.
+- [x] **Framework:** optional LangGraph, with a small graph (same nodes run sequentially without it):
   1. `load_analysis` — call `run_mpt_analysis().to_dict()` (cached).
   2. `build_profiles` — Phase 1 function.
   3. `allocate` — Phase 2 function, if the user gave an amount.
-  4. `explain` — LLM writes a comparison of the three options from the structured data.
-  5. `guardrail` — verify the output, else retry or fall back to a template.
-- [ ] **Read-only tools** for follow-up questions: `get_profile(name)`, `get_asset_stats(ticker)`, `get_frontier_point(index)`, `get_metadata()`. Tools may return existing weights; no tool creates or modifies weights.
-- [ ] **Prompt design:** system prompt states that all numbers are historical in-sample estimates, forbids inventing or adjusting figures, and requires the dataset window and risk-free rate in the answer.
-- [ ] **Guardrails (`guardrails.py`):**
-  - [ ] every percentage or amount in the LLM text matches a payload value (after rounding),
-  - [ ] no tickers outside `metadata.assets`,
-  - [ ] no forecast language ("will return", "guaranteed"),
-  - [ ] disclaimer and provenance present.
-- [ ] **Deterministic fallback:** a templated explanation used when the LLM is unavailable or fails guardrails, so the product still works offline.
-- [ ] Separate `agent/requirements.txt` so LLM dependencies never enter the baseline environment.
-- [ ] Evaluation set: a handful of fixed payloads + expected checks, run in CI.
+  4. `explain` — choose an approved reference plan; fall back to a template on model/plan failure.
+  5. `guardrail` — render verified facts and check exact content, provenance, and disclaimer.
+- [x] **Read-only tools** for follow-up questions: `get_profile(name)`, `get_asset_stats(ticker)`, `get_frontier_point(index)`, `get_metadata()`. Tools may return existing weights; no tool creates or modifies weights.
+- [x] **Prompt design:** historical estimates only; no invented/adjusted figures, new calculations, forecasts, or personalized recommendations. Python mandates provenance and disclaimer.
+- [x] **Guardrails (`guardrails.py`):** enforce approved fact references instead of validating arbitrary prose:
+  - [x] every percentage/amount is rendered directly from validated data (with display rounding),
+  - [x] no model-invented tickers or weights,
+  - [x] no model-written forecast language can enter final text,
+  - [x] disclaimer, provenance, profile summaries, and applicable warnings are mandatory.
+- [x] **Deterministic fallback:** works without the LLM, credentials, SDK, or graph dependency; emits explicit mode/reason codes. Invalid baseline data still fails.
+- [x] Separate `agent/requirements.txt` so LLM dependencies never enter the baseline environment.
+- [x] Evaluation set: three fixed payloads with expected checks, run in CI alongside fake-provider tests. CI tests both baseline-only and optional-agent installations.
+- [x] CLI opt-in `--explain --llm`, optional `--question`, and live Groq verification (overview and frontier tool call).
+
+Implementation limits: at most two requests per explanation, 30-second request
+timeout, no SDK retries, and four tool calls in one round. Tool retrieval and
+structured plans are separate requests because Groq does not combine them.
+The reference catalogue guarantees factual grounding, not question relevance;
+`question_answered` records the model's support decision, not an independent
+semantic assessment. Offline/fallback output is a general comparison.
 
 ### Phase 4 — API service (`api/`)
 
@@ -288,14 +309,16 @@ FinanceAI/
 ├── outputs/figures/
 ├── src/                           # baseline — ownership table unchanged
 │   └── ...
-├── agent/                         # Exists; allocation and LLM modules are planned
+├── agent/                         # Exists: profiles, allocation, explanations
 │   ├── __init__.py
-│   ├── requirements.txt           # Planned: LLM dependencies only
-│   ├── __main__.py                # Exists: offline profile JSON
+│   ├── requirements.txt           # Optional LLM/framework dependencies
+│   ├── __main__.py                # Offline default, explicit --explain --llm
 │   ├── profiles.py                # Exists
 │   ├── allocation.py              # Exists: fractional targets
 │   ├── formatting.py              # Exists: monetary display
 │   ├── tools.py
+│   ├── cache.py
+│   ├── provider.py
 │   ├── graph.py
 │   ├── explainer.py
 │   ├── guardrails.py
@@ -335,8 +358,8 @@ FinanceAI/
 | Concentration limits | Selected: flag only; a future hard cap needs approval | Phases 0–1 |
 | Sharpe in frontier contract | Selected: compute downstream with baseline math | Phases 0–1 |
 | Allocation mode | Implemented: fractional amounts; whole shares remain an optional later extension | Phase 2 |
-| LLM framework | Proposed: LangGraph; not integrated | Phase 3 |
-| LLM provider and model | GPT-5.4 mini recommended; model configuration and integration pending | Phase 3 |
+| LLM framework | Implemented: optional LangGraph, same-node sequential fallback | Phase 3 |
+| LLM provider and model | Implemented: Groq Responses, `openai/gpt-oss-20b`, OpenAI SDK | Phase 3 |
 | GUI stack | React · Streamlit | Phase 5 |
 | Ticker universe | Current 10 US stocks · larger / NSE universe (requires re-download) | All |
 
@@ -352,6 +375,7 @@ python -m src.main
 python -c "import json; from src.pipeline import run_mpt_analysis; json.dumps(run_mpt_analysis().to_dict(), allow_nan=False); print('JSON contract valid')"
 python -m agent
 python -m agent --amount 10000 --currency USD --profile medium
+python -m agent --explain
 git diff --check
 git status
 ```
@@ -359,7 +383,7 @@ git status
 Additionally for agent / API / GUI changes:
 
 - profile ordering tests pass,
-- guardrail tests pass once the Phase 3 guardrails exist,
+- guardrail and fixed evaluation tests pass,
 - every user-facing output shows the dataset window, risk-free rate, constraints and the statement that figures are historical estimates rather than forecasts or personalized investment advice.
 
 ## 8. Incremental implementation decisions
@@ -382,7 +406,7 @@ decisions, baseline tests, duplicate-GMV cleanup, and profile selection.
 - Concentration is flagged at weights above 40%, or fewer than three holdings
   above 1%. These are display diagnostics, not optimizer constraints.
 - No financial assumptions change and the frozen dataset need not be regenerated.
-- Fractional amount allocation is now complete. The LLM workflow is next.
+- Fractional allocation and the grounded LLM workflow are complete. The API service is next.
 
 ### First milestone delivered
 
@@ -405,18 +429,18 @@ The completed implementation was pushed as four focused commits:
 | `877f4fb` | Reuse GMV without changing the serialized baseline results |
 | `d60012b` | Add deterministic profiles, offline CLI, tests and documentation |
 
-Continue on `feature/ai-agentic-features`. Proposed next commits, each with
-relevant tests and updated documentation:
+Continue on `feature/ai-agentic-features`. The following incremental steps are
+now complete, each with relevant tests and updated documentation:
 
 - [x] Define and implement fractional allocation inputs and the structured result.
 - [x] Add display rounding and reconciliation while preserving full-precision targets.
-- [ ] Add read-only profile/analysis tools and deterministic explanation templates.
-- [ ] Add output guardrails and a fixed evaluation set.
-- [ ] Integrate the selected model and orchestration with tested offline fallback.
+- [x] Add read-only profile/analysis tools and deterministic explanation templates.
+- [x] Add output guardrails and a fixed evaluation set.
+- [x] Integrate the selected model and orchestration with tested offline fallback.
 
 Phase 2 exit criteria met: no network dependency, unchanged target weights and
 portfolio metrics, reconciled displayed amounts, retained provenance, and all
-repository checks passing. Phase 3 model integration is the next milestone.
+repository checks passing. Phase 3 model integration is also complete below.
 Phase 2 requires no LLM or framework dependency.
 
 ### Phase 2 implementation checkpoint
@@ -445,20 +469,27 @@ Provider choice updated at the user's request: Groq's OpenAI-compatible Response
 API, `https://api.groq.com/openai/v1`, model `openai/gpt-oss-20b`, credential
 `GROQ_API_KEY`. The earlier OpenAI-hosted model recommendation is superseded.
 
-The first Phase 3 step adds isolated read-only analysis tools, process-local
-analysis caching, and deterministic explanations. The next steps add reference
-validation, then a LangGraph workflow and the Groq client. Model explanations
-will select and organize approved fact IDs; Python renders their associated
+The first Phase 3 step added isolated read-only analysis tools, process-local
+analysis caching, and deterministic explanations. Subsequent steps added reference
+validation, the Groq client, and a LangGraph workflow. Model explanations
+select and organize approved fact IDs; Python renders their associated
 figures and sentences. This intentionally constrains wording so model-generated
 numbers, tickers, predictions, or changed weights cannot enter final text.
 
-The second checkpoint validates model reference plans and exact rendered output,
+The second checkpoint added model reference plans and exact rendered output checks,
 including mandatory provenance and warnings. Three fixed synthetic payloads
 exercise ordinary comparisons, concentration, and unsupported forecasts in CI.
-All 137 tests pass at this checkpoint; live integration follows separately.
+All 137 tests passed at that checkpoint, before live integration.
 
-The third checkpoint adds the Groq Responses adapter, optional pinned
+The third checkpoint added the Groq Responses adapter, optional pinned
 dependencies, prompt, and secret-free environment template. Tool retrieval and
 strict JSON plans use separate bounded requests. Live checks passed with
-`openai/gpt-oss-20b`, including `get_frontier_point(2)`. The next checkpoint
-connects the adapter to the explanation workflow and CLI.
+`openai/gpt-oss-20b`, including `get_frontier_point(2)`.
+
+The final Phase 3 checkpoint connects LangGraph, the adapter and CLI, retaining
+the same-node sequential path without LangGraph. Tests block network access and
+cover missing optional dependencies, provider failures, invalid plans, preserved
+profiles, allocation provenance, unsupported questions, and explicit CLI opt-in.
+Baseline source, financial assumptions, frozen data, and baseline dependencies
+are unchanged. README and AGENTS now document the implemented interfaces.
+The next milestone is Phase 4: the API service; no API or GUI is implemented yet.

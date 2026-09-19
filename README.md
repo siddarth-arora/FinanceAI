@@ -9,12 +9,13 @@ efficient portfolios with constrained numerical optimization.
 The numerical MPT layer is independent from the downstream `agent/` package
 and future LLM or user-interface code.
 
-**Current milestone:** baseline hardening (Phase 0), deterministic risk
-profiles (Phase 1), and fractional amount allocation (Phase 2) are complete.
-Phase 3 is in progress: read-only tools, deterministic explanations, guardrails,
-and the optional Groq Responses adapter are implemented. The model selects
-approved fact references; Python renders the corresponding financial statements.
-The baseline and original profile/allocation commands remain offline.
+**Current milestone:** baseline hardening (Phase 0), deterministic risk profiles
+(Phase 1), fractional allocation (Phase 2), and grounded agent explanations
+(Phase 3) are complete. Optional LangGraph orchestration uses Groq's
+`openai/gpt-oss-20b` through the OpenAI SDK Responses API. The model selects
+approved fact references; Python renders their financial statements. Baseline,
+profile, allocation, and default explanation commands run offline. Phase 4
+(the API service) is next.
 See [ROADMAP.md](ROADMAP.md) for progress,
 remaining decisions, and the sequence of small feature-branch commits.
 
@@ -38,11 +39,14 @@ Implemented:
 - Concentration flags, selection provenance, and an offline profile JSON command
 - Fractional allocation Python interface and CLI with exact monetary targets
 - Reconciled monetary display, rounding audit, and optional dust grouping
+- Read-only analysis tools, cached analysis, and LangGraph explanation workflow
+- Opt-in Groq Responses calls, reference guardrails, and offline fallback
+- Fixed evaluation fixtures and CI with and without optional dependencies
 
 Not implemented:
 
 - Whole-share allocation, share counts, or currency conversion
-- LLM explanations, agent orchestration, or RAG
+- RAG or unrestricted financial question answering
 - API service or GUI
 - Machine learning or return prediction
 - Sentiment or news analysis
@@ -96,7 +100,15 @@ FinanceAI/
 │   ├── __main__.py
 │   ├── profiles.py
 │   ├── allocation.py
-│   └── formatting.py
+│   ├── formatting.py
+│   ├── cache.py
+│   ├── tools.py
+│   ├── explainer.py
+│   ├── guardrails.py
+│   ├── provider.py
+│   ├── graph.py
+│   ├── requirements.txt
+│   └── prompts/system.md
 ├── data/
 │   ├── raw/
 │   │   └── stock_prices.parquet
@@ -126,7 +138,12 @@ FinanceAI/
         ├── test_profiles.py
         ├── test_allocation.py
         ├── test_formatting.py
-        └── test_cli.py
+        ├── test_cli.py
+        ├── test_tools.py
+        ├── test_guardrails.py
+        ├── test_provider.py
+        ├── test_graph.py
+        └── fixtures/evaluations.json
 ```
 
 ## Financial method
@@ -403,7 +420,8 @@ python -m agent
 `agent.allocation.allocate_amount()` and prints the allocation instead.
 `agent/profiles.py` applies
 fixed selection rules and uses `src.portfolio` to validate metrics and compute
-Sharpe. No prompts, model calls, or agent framework run in either file.
+Sharpe. These original commands do not load prompts or call a model; the new
+`--explain` route invokes the workflow described below.
 
 It prints full-precision JSON for three relative in-sample risk profiles. To use
 these in another Python component:
@@ -446,8 +464,8 @@ for presentation. The baseline JSON schema is unchanged.
 
 These profiles describe historical estimates within the frozen universe. They
 are not forecasts or personalized investment advice, and “low” does not mean
-safe. Fractional amount allocation is available below; read-only LLM
-explanation and guardrails are the next milestone. See `ROADMAP.md` for remaining phases.
+safe. Fractional allocation and grounded explanations are available below.
+See `ROADMAP.md` for remaining phases.
 
 ## Fractional amount allocation (roadmap Phase 2)
 
@@ -522,9 +540,13 @@ Parquet fixtures keep the suite independent of live data and the git-ignored
 frozen dataset. The pipeline test rejects network connections and verifies that analysis leaves
 the input file unchanged.
 
-The Phase 0–2 checkpoint has 106 passing tests, including allocation validation,
-exact products, rounding ties, one-cent amounts, dust grouping, CLI behavior,
-and unchanged offline profile outputs. Before completing each change,
+The Phase 3 checkpoint has 184 passing tests with the optional dependencies
+installed. Agent tests block network connections, use fake Responses clients,
+and cover read-only tools, reference validation, fixed payload evaluations,
+unchanged profiles, fallback behavior, and operation without optional dependencies.
+CI runs a baseline-only environment and one with agent dependencies; tests of
+installed SDK/framework behavior are skipped in the baseline-only job.
+Before completing each change,
 run the repository checks with the virtual environment active:
 
 ```bash
@@ -533,6 +555,7 @@ python -m src.main
 python -c "import json; from src.pipeline import run_mpt_analysis; json.dumps(run_mpt_analysis().to_dict(), allow_nan=False); print('JSON contract valid')"
 python -m agent
 python -m agent --amount 10000 --currency USD --profile medium
+python -m agent --explain
 git diff --check
 git status
 ```
@@ -562,7 +585,44 @@ This baseline is intended to remain understandable and auditable. Any change
 to a financial assumption should be made explicitly in configuration, tested,
 and documented before downstream systems consume the new results.
 
-## Phase 3 implementation progress
+## Grounded explanations (roadmap Phase 3)
+
+```bash
+# Offline comparison, with optional allocation
+python -m agent --explain
+python -m agent --explain --amount 10000 --currency USD --profile medium
+
+# Explicit Groq calls; optional dependencies and GROQ_API_KEY required
+python -m agent --explain --llm
+python -m agent --explain --llm --question "What are the high profile's weights?"
+python -m agent --explain --llm --question "Show frontier point 2 (zero-based)."
+```
+
+`--question` requires `--explain --llm` and accepts 1–2000 characters.
+An explanation result contains `profiles`, optional `allocation` (otherwise
+`null`), `explanation`, and `orchestration`. The explanation preserves full
+metadata locally and includes `text`, `fact_ids`, `disclaimer`, `status`, `mode`,
+`provider`, `model`, `fallback_reason`, `tool_calls`, and `question_answered`.
+`mode` distinguishes `offline`, `llm`, and `fallback`; `status` is `supported` or
+`unsupported`. `question_answered` records whether the model marked a supplied
+question supported; it is not a guarantee of relevance or completeness.
+
+The LangGraph nodes are `load_analysis → build_profiles → allocate → explain →
+guardrail`. Without LangGraph, the same nodes run sequentially and
+`orchestration` reports `sequential`. Without credentials or a client dependency,
+or on provider/validation failure, explicit LLM requests return a general
+deterministic comparison with `mode=fallback` and a reason code. Such a comparison
+does not answer the follow-up question. Invalid baseline data or invalid monetary
+inputs raise errors; they are never hidden by an explanation fallback.
+
+```python
+from agent.graph import run_agent
+
+result = run_agent(amount="10000", currency="USD", profile="medium")  # offline
+text = result["explanation"]["text"]
+# Pass payload=run_mpt_analysis().to_dict() to consume an existing snapshot.
+# Add use_llm=True and optionally question="..." to enable Groq explicitly.
+```
 
 Read-only tools are available through `agent.tools.AnalysisTools(payload)`:
 `get_profile(name)`, `get_asset_stats(ticker)`, `get_frontier_point(index)`, and
@@ -572,7 +632,17 @@ comparison with all profiles, warnings, provenance and the historical disclaimer
 `agent.cache.load_analysis()` caches the baseline payload per process and frozen
 file stat; clear the cache or restart after configuration changes.
 
-The Groq Responses adapter uses `openai/gpt-oss-20b` and `GROQ_API_KEY`.
-It chooses approved facts while deterministic code renders financial statements.
-Live checks succeeded for a general comparison and a frontier-point tool call.
-The next checkpoint exposes this through the LangGraph workflow and CLI.
+The model may select up to twelve known fact IDs. Python always adds all three
+profile metrics, applicable warnings, provenance, and the historical disclaimer.
+It validates the plan and verifies exact rendered content, so a model cannot
+introduce its own figures or swap otherwise-valid numbers between labels.
+This is a constrained explanation system: it does not generate arbitrary prose,
+calculate new comparisons, forecast returns, or make personalized recommendations.
+Fact grounding does not guarantee that the model selects the most relevant facts.
+Unsupported questions receive an explicit notice and the available comparison.
+
+Only `--llm` sends the question and approved analysis facts (including allocation
+amounts, if supplied) to Groq. Original local metadata remains in returned JSON;
+tool results sent to Groq omit `dataset_path`. No browser, code execution, market
+data, trade, or file-writing tool is exposed. Live smoke checks passed for both
+a general comparison and a frontier-point tool call using `openai/gpt-oss-20b`.
