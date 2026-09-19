@@ -46,8 +46,16 @@ FinanceAI/
 │   ├── pipeline.py            # run_mpt_analysis() → MPTAnalysisResult / to_dict()
 │   ├── visualization.py       # Frontier plot with GMV and Max Sharpe markers
 │   └── main.py                # CLI summary + figure
+├── agent/
+│   ├── profiles.py            # Deterministic sampled-profile selection
+│   └── __main__.py            # Offline JSON inspection command
 └── tests/
-    └── test_portfolio.py      # 9 unit tests for portfolio math
+    ├── test_portfolio.py
+    ├── test_returns.py
+    ├── test_data_loader.py
+    ├── test_optimizer.py
+    ├── test_pipeline.py
+    └── agent/test_profiles.py
 ```
 
 ### 2.2 Feature status
@@ -66,20 +74,20 @@ FinanceAI/
 | Frontier plot | ✅ Done | Static PNG |
 | CLI | ✅ Done | `python -m src.main` |
 | Unit tests | ✅ Baseline covered | Synthetic tests for portfolio math, returns, loader, optimizer and JSON pipeline |
-| Agentic layer | ❌ Not started | — |
-| Risk profiles (low / medium / high) | ❌ Not started | — |
+| Agentic layer | 🟡 Foundation ready | Deterministic consumer package; LLM workflow remains Phase 3 |
+| Risk profiles (low / medium / high) | ✅ Done | Sampled candidates, provenance, concentration and overlap flags |
 | Amount-based allocation | ❌ Not started | — |
 | API service | ❌ Not started | — |
 | GUI | ❌ Not started | — |
 
 ### 2.3 Observations from reviewing the code
 
-These are gaps worth fixing before building on top of the baseline.
+Original review findings and their current resolution:
 
-1. **Frontier points have no Sharpe ratio.** `efficient_frontier` entries contain return, variance, volatility and weights, but not Sharpe. The agent needs it for comparisons. Either compute it downstream with `src.portfolio.calculate_sharpe_ratio`, or add it to `EfficientFrontierPoint` / `to_dict()` (a contract change: update tests and README together).
+1. **Frontier points have no Sharpe ratio.** `efficient_frontier` entries contain return, variance, volatility and weights, but not Sharpe. The agent needs it for comparisons. Resolved downstream: `agent.profiles` uses `src.portfolio.calculate_sharpe_ratio`; the baseline JSON schema is unchanged.
 2. **The top of the frontier is a single stock.** The last frontier point targets `max(μ)`, which with long-only constraints is 100% in the highest-return asset (a synthetic run confirmed this). A "high risk" option taken naively from the end of the frontier would be an undiversified one-stock portfolio. See Section 4.2.
-3. **Max Sharpe is not guaranteed to be one of the 50 frontier points.** It lies on the frontier curve but usually between sampled points. Selection logic must decide whether to use `portfolios.maximum_sharpe` directly or the nearest frontier point.
-4. **Test coverage is limited to `portfolio.py`.** No tests exist for `returns.py`, `optimizer.py`, `pipeline.py`, `data_loader.py` or the JSON contract.
+3. **Max Sharpe is not guaranteed to be one of the 50 frontier points.** It lies on the frontier curve but usually between sampled points. Resolved: medium selects the nearest frontier point by volatility, preserving the `AGENTS.md` frontier-only rule.
+4. **Resolved: baseline test coverage.** Synthetic tests now cover returns, optimization, local loading and the pipeline JSON contract, without the real dataset.
 5. **Resolved: duplicate GMV solve.** The pipeline passes its computed GMV weights into frontier generation. Standalone frontier calls still solve GMV themselves; regression tests verify identical values and one solve per pipeline run.
 6. **`metadata.dataset_path` is an absolute local path.** Fine for CLI, but an API should not expose server filesystem paths to clients.
 7. **No stock-level descriptive data** (names, sectors, per-asset volatility, price history) is in the payload, yet the GUI needs it to "show the user all the stocks". Per-asset volatility is derivable from the diagonal of `annual_covariance`; names and sectors need a static metadata file.
@@ -121,7 +129,7 @@ Key principle: **numbers flow down from `src/` and are never regenerated above i
 - [x] `tests/test_optimizer.py` — on a synthetic 3–5 asset case: GMV weights valid; Max Sharpe ≥ Sharpe of every frontier point (within tolerance); frontier returns increasing and volatilities non-decreasing; infeasible target raises.
 - [x] `tests/test_pipeline.py` — `to_dict()` is JSON-serializable, has the documented keys, weights keyed by ticker and summing to 1. Use a small temporary Parquet fixture so tests do not depend on the git-ignored real dataset.
 - [x] `tests/test_data_loader.py` — missing file, wrong ticker order, duplicate dates, non-positive prices.
-- [ ] Decide on Sharpe in frontier points (Observation 1). If added: update `optimizer.py`, `pipeline.py`, README schema, tests.
+- [x] Compute profile Sharpe downstream through `src.portfolio`; preserve the baseline frontier schema.
 - [ ] Optional: expose per-asset annual volatility in `to_dict()` (derived from Σ diagonal, no new assumption).
 - [ ] Optional: `data/reference/tickers.json` with company name and sector for display (static, no network).
 
@@ -139,12 +147,12 @@ This is plain Python with no LLM. It turns the frontier into three options.
 
 Tasks:
 
-- [ ] Implement `select_profiles(payload) -> dict[str, ProfileResult]` using only values already in the payload.
-- [ ] Recompute Sharpe for any frontier point with `src.portfolio.calculate_sharpe_ratio` (rule 6).
-- [ ] Add a diversification check: flag profiles where any weight exceeds a threshold (e.g. 40%) or fewer than N assets exceed a tiny weight (e.g. 1%). Flag only; do not alter weights.
+- [x] Implement `select_profiles(payload) -> dict[str, ProfileResult]` using only values already in the payload.
+- [x] Recompute Sharpe for any frontier point with `src.portfolio.calculate_sharpe_ratio` (rule 6).
+- [x] Add a diversification check: flag profiles where any weight exceeds a threshold (e.g. 40%) or fewer than N assets exceed a tiny weight (e.g. 1%). Flag only; do not alter weights.
 - [ ] **[needs approval]** If a hard concentration cap (e.g. max 30% per stock) is wanted, it must be a new constraint in `src/optimizer.py` with config, tests and README updates, because it changes the frontier itself. It must not be applied by editing weights in the agent.
-- [ ] Record the selection rule and its parameters in the profile output so the GUI can show *why* each option was chosen.
-- [ ] `tests/agent/test_profiles.py` — ordering guarantee: low volatility ≤ medium ≤ high, and low return ≤ medium ≤ high.
+- [x] Record the selection rule and its parameters in the profile output so the GUI can show *why* each option was chosen.
+- [x] `tests/agent/test_profiles.py` — ordering guarantee: low volatility ≤ medium ≤ high, and low return ≤ medium ≤ high.
 
 ### Phase 2 — Amount-based allocation (`agent/allocation.py`)
 
@@ -265,9 +273,9 @@ FinanceAI/
 
 | Decision | Options | Affects |
 | --- | --- | --- |
-| High-risk selection rule | Volatility midpoint above Max Sharpe · fixed frontier index · target-return percentile | Phase 1 |
-| Concentration limits | Flag only · new optimizer constraint **[needs approval]** | Phases 0–1 |
-| Sharpe in frontier contract | Compute downstream · add to `to_dict()` | Phases 0–1 |
+| High-risk selection rule | Selected: interior volatility midpoint, with explicit overlap fallback | Phase 1 |
+| Concentration limits | Selected: flag only; a future hard cap needs approval | Phases 0–1 |
+| Sharpe in frontier contract | Selected: compute downstream with baseline math | Phases 0–1 |
 | Allocation mode | Fractional only · whole shares with live prices | Phase 2 |
 | LLM provider / framework | LangGraph + hosted model · local model | Phase 3 |
 | GUI stack | React · Streamlit | Phase 5 |
@@ -290,7 +298,7 @@ git status
 Additionally for agent / API / GUI changes:
 
 - profile ordering tests pass,
-- guardrail tests pass,
+- guardrail tests pass once the Phase 3 guardrails exist,
 - every user-facing output shows the dataset window, risk-free rate, constraints and the statement that figures are historical estimates rather than forecasts or personalized investment advice.
 
 ## 8. Incremental implementation decisions
@@ -313,3 +321,13 @@ decisions, baseline tests, duplicate-GMV cleanup, and profile selection.
   above 1%. These are display diagnostics, not optimizer constraints.
 - No financial assumptions change and the frozen dataset need not be regenerated.
 - Amount allocation and the LLM workflow follow as subsequent milestones.
+
+### First milestone delivered
+
+Phase 0 required work and Phase 1 are implemented. Optional asset metadata and
+per-asset volatility exports remain deferred. `python -m agent` produces
+profiles offline, including provenance and disclaimers. Tests cover normal and
+sparse frontiers, endpoint concentration, ordering, ticker mapping, invalid
+inputs and copy isolation. The full real-dataset baseline payload was compared
+before and after GMV reuse and matched exactly. Next: Phase 2 fractional amount
+allocation, then Phase 3 read-only tools and LLM explanations.

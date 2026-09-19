@@ -6,8 +6,8 @@ of historical adjusted stock prices once, freezes them as a local Parquet
 dataset, estimates historical returns and covariance, and constructs long-only
 efficient portfolios with constrained numerical optimization.
 
-The numerical MPT layer is intentionally independent from any future agentic
-or user-interface layer.
+The numerical MPT layer is independent from the downstream `agent/` package
+and future LLM or user-interface code.
 
 ## Current scope
 
@@ -24,11 +24,13 @@ Implemented:
 - Efficient upper frontier using repeated constrained optimization
 - Efficient-frontier visualization
 - Reusable structured Python/JSON result contract
-- Unit tests for fundamental portfolio mathematics
+- Synthetic tests for portfolio math, returns, loading, optimization and JSON output
+- Deterministic low / medium / high profile selection from the sampled frontier
+- Concentration flags, selection provenance, and an offline profile JSON command
 
 Not implemented:
 
-- LLMs, agents, or RAG
+- LLM explanations, agent orchestration, or RAG
 - Machine learning or return prediction
 - Sentiment or news analysis
 - Black-Litterman or CAPM return estimation
@@ -53,7 +55,7 @@ data_loader.py -> returns.py -> portfolio.py -> optimizer.py
                                   pipeline.py
                                   /         \
                                  v           v
-                         main.py (CLI)   future service/agent
+                         main.py (CLI)   agent/profiles.py
                                  |
                                  v
                          visualization.py
@@ -75,6 +77,11 @@ FinanceAI/
 ├── AGENTS.md
 ├── README.md
 ├── requirements.txt
+├── ROADMAP.md
+├── agent/
+│   ├── __init__.py
+│   ├── __main__.py
+│   └── profiles.py
 ├── data/
 │   ├── raw/
 │   │   └── stock_prices.parquet
@@ -94,8 +101,13 @@ FinanceAI/
 │   ├── visualization.py
 │   └── main.py
 └── tests/
-    ├── __init__.py
-    └── test_portfolio.py
+    ├── conftest.py
+    ├── test_portfolio.py
+    ├── test_returns.py
+    ├── test_data_loader.py
+    ├── test_optimizer.py
+    ├── test_pipeline.py
+    └── agent/test_profiles.py
 ```
 
 ## Financial method
@@ -333,6 +345,59 @@ must not describe historical expected returns as forecasts.
 
 See `AGENTS.md` for a direct working contract intended for coding agents that
 extend or consume this repository.
+
+## Deterministic risk profiles (roadmap Phase 1)
+
+The `agent/` package consumes the supported pipeline payload. This first step
+requires no LLM, API key, network connection, or additional dependencies:
+
+```bash
+python -m agent
+```
+
+It prints full-precision JSON for three relative in-sample risk profiles. To use
+these in another Python component:
+
+```python
+from agent.profiles import select_profiles
+from src.pipeline import run_mpt_analysis
+
+profiles = select_profiles(run_mpt_analysis().to_dict())
+medium = profiles["medium"].to_dict()
+```
+
+| Profile | Selection from `efficient_frontier` |
+| --- | --- |
+| Low | First point, at GMV |
+| Medium | Point nearest Maximum Sharpe volatility |
+| High | Interior point at or above medium nearest the volatility midpoint between Maximum Sharpe and the endpoint |
+
+Medium approximates Maximum Sharpe because the exact optimizer solution may
+lie between sampled points. Equal-distance ties choose the earlier index.
+If high cannot select a distinct interior point, it reuses medium and flags the
+overlap. If medium itself lands on the endpoint, high also reuses it and both
+carry an endpoint warning. There is no guarantee of three distinct portfolios
+or a diversified high profile.
+
+Each `ProfileResult.to_dict()` includes `name`, `expected_return`, `variance`,
+`volatility`, `sharpe_ratio`, ticker-keyed `weights`, complete `metadata`,
+`selection`, `diversification`, `warnings`, and `disclaimer`. Selection includes
+the original frontier index, rule, parameters, and overlaps. Metadata retains
+the dataset window, trading days, risk-free rate, and constraints. Consumers
+should display this provenance and disclaimer alongside the numbers.
+
+All weights and existing metrics are copied unchanged. Sharpe is evaluated with
+`src.portfolio.calculate_sharpe_ratio` using the payload's configured risk-free
+rate. The selector checks that supplied metrics agree with their weights and
+rejects invalid inputs. A weight above 40%, or fewer than three holdings above
+1%, produces a diagnostic flag; neither changes the allocation or optimizer
+constraints. Rates and weights remain decimal numbers, with rounding reserved
+for presentation. The baseline JSON schema is unchanged.
+
+These profiles describe historical estimates within the frozen universe. They
+are not forecasts or personalized investment advice, and “low” does not mean
+safe. Fractional amount allocation is the next milestone, followed by read-only
+LLM explanation and guardrails. See `ROADMAP.md` for remaining phases.
 
 ## Tests
 
