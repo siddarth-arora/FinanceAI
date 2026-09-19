@@ -438,3 +438,16 @@ Money remains decimal strings, including two-decimal display amounts. Tests cove
 one-cent and large amounts, rounding ties, negative numerical dust, hidden totals,
 all profiles, and CLI errors before analysis. All 106 tests and repository checks
 pass; no baseline source, assumptions, dataset, or dependencies were changed.
+
+### Phase 3 implementation decisions
+
+Provider choice updated at the user's request: Groq's OpenAI-compatible Responses
+API, `https://api.groq.com/openai/v1`, model `openai/gpt-oss-20b`, credential
+`GROQ_API_KEY`. The earlier OpenAI-hosted model recommendation is superseded.
+
+The first Phase 3 step adds isolated read-only analysis tools, process-local
+analysis caching, and deterministic explanations. The next steps add reference
+validation, then a LangGraph workflow and the Groq client. Model explanations
+will select and organize approved fact IDs; Python renders their associated
+figures and sentences. This intentionally constrains wording so model-generated
+numbers, tickers, predictions, or changed weights cannot enter final text.

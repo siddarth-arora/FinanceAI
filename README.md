@@ -547,3 +547,19 @@ each step. Implementation boundaries are documented in [AGENTS.md](AGENTS.md).
 This baseline is intended to remain understandable and auditable. Any change
 to a financial assumption should be made explicitly in configuration, tested,
 and documented before downstream systems consume the new results.
+
+## Phase 3 implementation progress
+
+Read-only tools are available through `agent.tools.AnalysisTools(payload)`:
+`get_profile(name)`, `get_asset_stats(ticker)`, `get_frontier_point(index)`, and
+`get_metadata()`. They return isolated copies and cannot edit portfolios or
+request a download. `agent.explainer.explain_offline(payload)` produces a
+comparison with all profiles, warnings, provenance and the historical disclaimer.
+`agent.cache.load_analysis()` caches the baseline payload per process and frozen
+file stat; clear the cache or restart after configuration changes.
+
+The requested LLM integration is Groq's Responses API with
+`openai/gpt-oss-20b` and `GROQ_API_KEY`. It is being implemented separately from
+baseline calculations. The model will choose approved facts, while deterministic
+code renders the financial statements. Guardrails and live calls follow in the
+next commits.
