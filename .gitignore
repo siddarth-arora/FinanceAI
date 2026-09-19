@@ -5,6 +5,11 @@
 .venv/
 venv/
 
+# Local API keys and environment configuration
+.env
+.env.*
+!.env.example
+
 # Python-generated files
 __pycache__/
 *.py[cod]
@@ -21,4 +26,3 @@ htmlcov/
 # Locally generated datasets and figures
 data/raw/*.parquet
 outputs/figures/*.png
-

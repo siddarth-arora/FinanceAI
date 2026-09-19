@@ -230,6 +230,15 @@ Verify imports:
 python -c "import numpy, pandas, pyarrow, scipy, matplotlib, yfinance, pytest; print('Imports succeeded')"
 ```
 
+## Local API-key storage
+
+Store a future OpenAI API key in `.env` at the repository root using
+`OPENAI_API_KEY=your_key_here`. This file and `.env.*` variants are ignored by
+Git; `.env.example` is reserved for a template containing no secrets. On a fresh
+clone, create `.env` locally if needed. The current deterministic commands do
+not load this file or call an LLM; environment loading will be added with the
+LLM integration.
+
 ## Create the frozen dataset
 
 Data acquisition is always explicit:
