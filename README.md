@@ -11,10 +11,10 @@ and future LLM or user-interface code.
 
 **Current milestone:** baseline hardening (Phase 0) and deterministic risk
 profiles (Phase 1) are complete. Despite its name, `agent/` currently calls no
-LLM. No model provider, model name, API key, or LLM SDK is configured. LangGraph
+LLM. No model client or LLM SDK is integrated; a local API key is not used yet. LangGraph
 is proposed for Phase 3 and is not installed by this project's requirements.
 
-The next milestone is fractional amount allocation (Phase 2), followed by LLM
+Fractional amount allocation (Phase 2) is in progress, followed by LLM
 explanations and guardrails (Phase 3). See [ROADMAP.md](ROADMAP.md) for progress,
 remaining decisions, and the sequence of small feature-branch commits.
 
@@ -36,10 +36,11 @@ Implemented:
 - Synthetic tests for portfolio math, returns, loading, optimization and JSON output
 - Deterministic low / medium / high profile selection from the sampled frontier
 - Concentration flags, selection provenance, and an offline profile JSON command
+- Fractional allocation Python interface with exact decimal monetary targets
 
 Not implemented:
 
-- Amount-based allocation, share counts, or currency conversion
+- Whole-share allocation, share counts, or currency conversion
 - LLM explanations, agent orchestration, or RAG
 - API service or GUI
 - Machine learning or return prediction
@@ -92,7 +93,8 @@ FinanceAI/
 ├── agent/
 │   ├── __init__.py
 │   ├── __main__.py
-│   └── profiles.py
+│   ├── profiles.py
+│   └── allocation.py
 ├── data/
 │   ├── raw/
 │   │   └── stock_prices.parquet
@@ -118,7 +120,9 @@ FinanceAI/
     ├── test_data_loader.py
     ├── test_optimizer.py
     ├── test_pipeline.py
-    └── agent/test_profiles.py
+    └── agent/
+        ├── test_profiles.py
+        └── test_allocation.py
 ```
 
 ## Financial method
@@ -421,8 +425,37 @@ for presentation. The baseline JSON schema is unchanged.
 
 These profiles describe historical estimates within the frozen universe. They
 are not forecasts or personalized investment advice, and “low” does not mean
-safe. Fractional amount allocation is the next milestone, followed by read-only
+safe. Fractional amount allocation is in progress, followed by read-only
 LLM explanation and guardrails. See `ROADMAP.md` for remaining phases.
+
+## Fractional amount allocation (roadmap Phase 2)
+
+The Python allocation interface is implemented; display rounding and CLI input
+are the next step in this milestone. It consumes a baseline analysis payload
+and selects a validated profile, rejecting modified weights with stale metrics:
+
+```python
+from agent.allocation import allocate_amount
+from src.pipeline import run_mpt_analysis
+
+allocation = allocate_amount("10000.00", "USD", run_mpt_analysis().to_dict(), "medium")
+payload = allocation.to_dict()
+```
+
+Inputs accept a decimal string, integer, float, or `Decimal`. Prefer strings or
+`Decimal` for money. Amounts must be positive, in whole cents/paise, and no greater
+than `999999999999.99` (an application input limit). USD and INR are supported
+labels; no currency conversion or live-price request occurs.
+
+`AllocationResult.to_dict()` contains `mode`, `amount`, `currency`,
+`target_profile`, `target_amounts`, `numerical_residual`, and `notice`. The complete
+source profile retains its metadata, warnings and disclaimer. Monetary values
+serialize as decimal strings to preserve precision; weights and portfolio metrics
+retain their existing numeric representation. Target amounts multiply the input
+by each weight's full round-trip decimal representation, without normalizing
+weights. `numerical_residual` records tiny weight-sum drift, not uninvested cash.
+All target holdings, including dust, remain present. These are target amounts,
+not trades or share counts. No financial assumption or frozen dataset changes.
 
 ## Tests
 

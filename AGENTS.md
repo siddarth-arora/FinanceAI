@@ -102,7 +102,8 @@ serialize `result.to_dict()`. It should not duplicate the MPT workflow.
 
 ## Downstream implementation status and handoff
 
-`agent/` currently contains deterministic profile selection only. It calls no
+`agent/` currently contains deterministic profile selection and fractional
+monetary targets. Display reconciliation and CLI allocation are in progress. It calls no
 LLM and has no model provider, prompts, or LLM dependencies configured.
 `agent/__main__.py` calls the supported pipeline, selects profiles, and prints
 JSON; `agent/profiles.py` exposes `select_profiles(payload)` and `ProfileResult`.
@@ -113,8 +114,10 @@ profile's metadata, selection rule, diversification diagnostics, warnings, and
 disclaimer when passing it downstream. Profiles may overlap, and medium is a
 sampled approximation to Maximum Sharpe, not necessarily the exact optimum.
 
-The next milestone is deterministic fractional amount allocation in
-`agent/allocation.py`. Keep target weights unchanged and distinguish calculated
+The fractional allocation interface is
+`agent.allocation.allocate_amount(amount, currency, payload, profile_name)`.
+It selects profiles through the validated payload, and serializes money as
+decimal strings while leaving rates and weights numeric. Keep target weights unchanged and distinguish calculated
 amounts from rounded display amounts. Currency input must not imply an FX
 conversion or live-price lookup. Whole-share allocation remains an optional
 later extension requiring effective-weight validation as described above.

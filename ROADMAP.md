@@ -7,14 +7,14 @@
 
 **Current checkpoint:** Phase 0 required work and Phase 1 are complete on
 `feature/ai-agentic-features` (46 passing tests). The `agent/` package is plain
-Python: it calls no LLM and has no provider, model, API key, prompts, or LLM SDK
-configured. LangGraph is a Phase 3 proposal, not a current dependency.
+Python: it calls no LLM and has no model client, prompts, or LLM SDK integrated.
+A local `.env` may store a key for future use; current commands do not load it. LangGraph is a Phase 3 proposal, not a current dependency.
 
 | Milestone | Status | Next action |
 | --- | --- | --- |
 | Phase 0: baseline hardening | Complete; optional display metadata deferred | Preserve the verified numerical baseline |
 | Phase 1: deterministic profiles | Complete | Consume the existing structured profile contract |
-| Phase 2: fractional allocation | Next; not implemented | Define amount/currency validation and display rounding |
+| Phase 2: fractional allocation | In progress; Python targets implemented | Add display rounding and CLI input |
 | Phase 3: LLM explanations | Planned; not implemented | Add read-only tools and fallback, then choose provider/model |
 | Phases 4–6: API, GUI, research | Planned; not implemented | Build after the profile and allocation contracts stabilize |
 
@@ -89,7 +89,7 @@ FinanceAI/
 | Unit tests | ✅ Baseline covered | Synthetic tests for portfolio math, returns, loader, optimizer and JSON pipeline |
 | Agentic layer | 🟡 Foundation ready | Deterministic consumer package; LLM workflow remains Phase 3 |
 | Risk profiles (low / medium / high) | ✅ Done | Sampled candidates, provenance, concentration and overlap flags |
-| Amount-based allocation | ❌ Not started | — |
+| Amount-based allocation | 🟡 In progress | Exact monetary targets; display rounding and CLI remain |
 | API service | ❌ Not started | — |
 | GUI | ❌ Not started | — |
 
@@ -184,15 +184,15 @@ Tasks:
 
 ### Phase 2 — Amount-based allocation (`agent/allocation.py`)
 
-**Status: next milestone; not implemented.** Start with fractional monetary
+**Status: in progress.** The Python interface now produces fractional monetary
 allocations. These are target amounts, not executable trades or share counts.
 Keep whole-share mode outside this first allocation milestone.
 
-- [ ] Define the structured allocation result, preserving profile provenance, warnings and disclaimer.
-- [ ] Validate a finite positive investment amount and define supported currency labels. Currency labels alone do not perform FX conversion.
+- [x] Define the structured allocation result, preserving profile provenance, warnings and disclaimer.
+- [x] Validate a finite positive investment amount and define supported currency labels. Currency labels alone do not perform FX conversion.
 - [ ] Define deterministic display rounding and residual handling so displayed amounts reconcile to the input without editing target weights.
-- [ ] Input: investment amount + currency + chosen profile.
-- [ ] **Fractional mode (default):** `amount × weight` per ticker. Weights unchanged, so no re-validation issue.
+- [x] Input: investment amount + currency + chosen profile.
+- [x] **Fractional mode (default):** `amount × weight` per ticker. Weights unchanged, so no re-validation issue.
 - [ ] **Whole-share mode (optional):** needs a current price per ticker. Current prices must come from a separate market-data service (e.g. `services/market_data/`), never from `src/`. Rounding down to whole shares leaves residual cash and changes effective weights, so:
   - [ ] recompute effective weights over the invested portion,
   - [ ] re-evaluate return / volatility / Sharpe with `src.portfolio`,
@@ -403,3 +403,14 @@ Phase 2 exit criteria: no network dependency, unchanged target weights and
 portfolio metrics, reconciled displayed amounts, retained provenance, and all
 repository checks passing. Phase 3 model integration remains a later milestone;
 no LLM or framework dependency is needed to begin Phase 2.
+
+### Phase 2 implementation checkpoint
+
+`agent.allocation.allocate_amount(amount, currency, payload, profile_name)` now
+returns precise monetary targets and the unchanged validated profile. USD/INR
+are labels only. Inputs require whole cents/paise, positivity, and a maximum of
+`999999999999.99`; this is an application input limit, not a portfolio constraint.
+Money serializes as decimal strings. Numerical weight-sum drift is reported
+explicitly; target weights are not normalized. Tests cover validation, exact
+products, metadata preservation, stale metrics, isolation, and offline operation.
+Display reconciliation and CLI allocation arguments follow in the next commit.
