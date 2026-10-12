@@ -69,3 +69,16 @@ def test_plans_can_be_disabled(make_client):
     assert client.get("/api/health").json()["plans_enabled"] is False
     assert client.get("/api/plans").status_code == 404
     assert client.post("/api/plans", json=BODY).status_code == 404
+
+
+@pytest.mark.parametrize("given,expected", [
+    ("postgresql://u:p@ep-x.neon.tech/db?sslmode=require",
+     "postgresql+psycopg://u:p@ep-x.neon.tech/db?sslmode=require"),
+    ("postgres://u:p@host/db", "postgresql+psycopg://u:p@host/db"),
+    ("postgresql+psycopg://u:p@host/db", "postgresql+psycopg://u:p@host/db"),
+    ("sqlite:///data/app/financeai.db", "sqlite:///data/app/financeai.db"),
+])
+def test_pasted_postgres_urls_use_the_installed_driver(given, expected):
+    """Neon's URL pasted as-is must not select psycopg2, which is not installed."""
+    from api.db import normalize_database_url
+    assert normalize_database_url(given) == expected

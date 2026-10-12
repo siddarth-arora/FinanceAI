@@ -156,6 +156,10 @@ class ToolCall(BaseModel):
 
 class Explanation(BaseModel):
     text: str
+    #: The model's own reply, present only when it passed number validation.
+    #: Every figure in it appears verbatim in a cited fact; `text` remains the
+    #: Python-rendered grounding for it.
+    answer: str | None = None
     fact_ids: list[str]
     metadata: Metadata
     disclaimer: str
@@ -163,6 +167,8 @@ class Explanation(BaseModel):
     mode: Literal["offline", "llm", "fallback"]
     model: str | None
     fallback_reason: str | None
+    #: Set when prose was discarded for stating an unverifiable figure.
+    answer_rejected: str | None = None
     tool_calls: list[ToolCall]
     provider: str | None
     question_answered: bool

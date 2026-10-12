@@ -38,6 +38,23 @@ jobs:
           npx --yes openapi-typescript@7.13.0 "$RUNNER_TEMP/openapi.json" -o gui/lib/api/schema.d.ts
           git diff --exit-code gui/lib/api/schema.d.ts
 
+  dataset:
+    # The real frozen file, fetched and verified exactly as the server does at start.
+    # The URL follows this repository (forks included); the hash must match render.yaml.
+    runs-on: ubuntu-latest
+    env:
+      FINANCEAI_DATASET_URL: https://github.com/${{ github.repository }}/releases/download/dataset-v1/stock_prices.parquet
+      FINANCEAI_DATASET_SHA256: 48a8585cd14dcf6f7f46dbbf336ddce73d10a873c41f8a190b6fd23fbd165fc3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install -r requirements.txt -r api/requirements.txt
+      - run: python -m api.bootstrap
+      - run: python -m src.main
+      - run: python -c "import json; from src.pipeline import run_mpt_analysis; json.dumps(run_mpt_analysis().to_dict(), allow_nan=False); print('JSON contract valid')"
+
   gui:
     runs-on: ubuntu-latest
     defaults:

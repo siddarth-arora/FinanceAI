@@ -1,0 +1,36 @@
+# Render Blueprint for the FinanceAI API (native Python runtime, no Docker).
+# Secrets are never written here: every `sync: false` key is entered once in the
+# Render dashboard. The dataset is not in Git: the start command fetches and
+# verifies it on every boot (Render's disk is ephemeral).
+services:
+  - type: web
+    name: financeai-api
+    runtime: python
+    plan: free                    # sleeps after ~15 min idle; first request then waits to wake
+    region: singapore             # closest Render region to India
+    branch: manraj
+    buildCommand: pip install -r requirements.txt -r agent/requirements.txt -r api/requirements.txt
+    # 1) fetch + verify the frozen dataset (fails closed), 2) serve.
+    # --proxy-headers: the LLM rate limit keys on the real visitor IP behind Render's proxy.
+    startCommand: python -m api.bootstrap && uvicorn api.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'
+    healthCheckPath: /api/health
+    autoDeployTrigger: checksPass # deploy only after GitHub Actions pass on the branch
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13"             # the pinned numpy/scipy need 3.12+; matches CI
+      # The frozen dataset, pinned: a different file fails the checksum and the
+      # server refuses to start. A new dataset is a new release tag and hash.
+      - key: FINANCEAI_DATASET_URL
+        sync: false               # https://github.com/<you>/FinanceAI/releases/download/dataset-v1/stock_prices.parquet
+      - key: FINANCEAI_DATASET_SHA256
+        value: 48a8585cd14dcf6f7f46dbbf336ddce73d10a873c41f8a190b6fd23fbd165fc3
+      - key: FINANCEAI_DATABASE_URL
+        sync: false               # Neon: postgresql+psycopg://<user>:<password>@<host>/<db>?sslmode=require
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-20b # must be served by Groq's Responses API with strict outputs
+      - key: FINANCEAI_CORS_ORIGINS
+        sync: false               # must be a JSON list, e.g. ["https://<project>.vercel.app"]; never empty
+      # Optional, add in the dashboard for Vercel previews:
+      # FINANCEAI_CORS_ORIGIN_REGEX=^https://<project>-[a-z0-9-]+-<team>\.vercel\.app$

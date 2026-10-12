@@ -130,10 +130,60 @@ must propagate. Do not present a fallback as answering a follow-up question.
 `agent.tools.AnalysisTools` exposes only four read-only operations. The model
 selects approved fact IDs; `explainer.py` renders their statements and
 `guardrails.py` verifies the plan and exact output. Always preserve mandatory
-profile metrics, warnings, provenance and disclaimer. Do not accept raw model
-prose or introduce financial calculations in the model. Tool retrieval and
+profile metrics, warnings, provenance and disclaimer. Do not introduce financial
+calculations in the model. Tool retrieval and
 structured plans use separate Groq requests, bounded to two requests and four
-tool calls per explanation. Strip local dataset paths from model-bound tool data.
+tool calls per explanation; each request pins `temperature=0` and one
+unreachable-provider attempt is retried, as is one malformed generation (Groq's
+`tool_use_failed` / `json_validate_failed`), while a refusal (400 bad request,
+auth, access, 404 unknown model, rate limit) is final. Strip local dataset paths
+from model-bound tool data.
+
+`gpt-oss` reasons in hidden tokens that share `MAX_OUTPUT_TOKENS`, so the
+look-up request runs at `reasoning.effort="low"` and the plan request at
+`"medium"`; `reasoning` is sent only to `openai/gpt-oss-*`, since Groq rejects
+it elsewhere. The look-up request ends with `LOOKUP_STEP`, which forbids writing
+the plan early. `GROQ_MODEL` must name a model the Groq Responses API serves
+with strict structured output; others fail as `model_unavailable` or
+`request_rejected`. Never put a length or count bound in `plan_schema`: Groq
+checks it only after generation and discards the whole plan. Bounds belong in
+`guardrails.py`, where exceeding them costs only the prose. At the provider
+boundary `_trim_citations` keeps the first `MAX_SELECTED_FACTS` distinct IDs, and
+`_cite_allocation` cites the `allocation` fact when the user's own amount is the
+only ungrounded figure, making room only by dropping a figure-free fact. Neither
+admits a number the cited facts do not contain.
+
+`explainer.CONCEPTS` holds fixed method statements (what MPT, the frontier,
+volatility, Sharpe, in-sample hindsight and the constraints mean) so that a
+question about meaning or method is answerable without model prose. They are
+definitions only: a concept must never contain a measurement, and tests enforce
+this. `explainer.concept_matches()` is a deterministic keyword floor over them.
+`run_agent` applies it only when a question exists and the plan would otherwise
+not address it — because model selection is not reproducible even at
+`temperature=0` — and never over an `unsupported` verdict. The floor also applies
+to a fallback plan, but `question_answered` stays false whenever the mode is not
+`llm`, so a fallback is still never presented as answering the question.
+`explainer.request_context()` tells the model which profile, amount and emphasis
+the user chose, so a question can be answered about their own selections; it
+carries no figures and the renderer never reads it.
+
+A question may be answered in the model's own words. `plan_schema(..., with_answer=True)`
+adds an `answer` string, requested only when a question is present, and
+`guardrails.validate_answer()` admits it only when every numeric token in it
+appears in the facts that same plan cites — checked against the cited facts, not
+the whole catalogue, so prose cannot quote a figure the reader is never shown.
+Rounding, converting or combining figures therefore fails, by design. A rejected
+answer costs only the prose: the fact selection still renders, `answer_rejected`
+names the reason, and the UI says the wording was discarded. `explanation.text`
+remains the Python-rendered grounding and is still the only source of displayed
+figures; `explanation.answer` is additive. Do not let model prose reach the
+reader unvalidated, and do not widen the allowed-number set to make a model
+answer pass.
+
+A question narrows the mandatory block to warnings for options the answer
+actually discusses, plus provenance, any infeasible-window report and the
+disclaimer (`mandatory_facts(facts, cited)`); an overview keeps the full block.
+Risk disclosure is focused this way, never dropped.
 
 Consumers should use `select_profiles(run_mpt_analysis().to_dict())` and
 `ProfileResult.to_dict()` rather than parsing the profile CLI. Preserve the

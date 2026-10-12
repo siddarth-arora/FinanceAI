@@ -20,6 +20,72 @@ WARNINGS = {
     'frontier_endpoint_selected': 'This profile is at the frontier endpoint and may be concentrated in one asset.',
     'no_distinct_higher_interior_selection': 'High reuses medium because no distinct higher interior point was selected.',
 }
+# Method statements, not measurements: definitions of what this analysis computes
+# and what its outputs do or do not mean. Python owns every word; the model may
+# only cite them, so a "what does this mean" question needs no model prose.
+CONCEPTS = {
+    'concept.mpt': (
+        'Modern Portfolio Theory (Markowitz) treats a portfolio by its combined risk and return '
+        'rather than by each holding alone. Because assets do not move identically, a mix can carry '
+        'less volatility than the weighted average of its parts. This analysis applies that method to '
+        'a frozen historical sample: it estimates each asset\'s historical mean return and the sample '
+        'covariance between assets, then solves for the weight sets with the least variance at each '
+        'achievable return level.'
+    ),
+    'concept.frontier': (
+        'The efficient frontier is the set of portfolios with the lowest variance available at each '
+        'level of historical expected return; a portfolio below it is dominated by one with the same '
+        'risk and more return. This analysis samples the frontier at a fixed number of points, each '
+        'solved independently under the stated constraints. A frontier point is one complete set of '
+        'target weights together with its historical return, volatility and Sharpe ratio.'
+    ),
+    'concept.profiles': (
+        'The low, medium and high profiles are not separate strategies: each is one sampled frontier '
+        'point chosen by a fixed published rule, so they differ only in where they sit on the same '
+        'frontier. Their labels are relative positions within this sample, not statements about '
+        'suitability for any individual.'
+    ),
+    'concept.volatility': (
+        'Volatility here is the annualized standard deviation of the portfolio\'s historical daily '
+        'returns, measuring how widely those returns dispersed around their own mean. It describes '
+        'variability in the sample; it is not a maximum loss, a probability, or a forecast of future '
+        'variability.'
+    ),
+    'concept.expected_return': (
+        'Historical expected return is the arithmetic mean of realized daily returns over the frozen '
+        'sample, annualized. It is a summary of what this sample did, not a prediction, a target or a '
+        'guaranteed rate. A different sample window would produce different estimates and therefore '
+        'different optimized weights.'
+    ),
+    'concept.sharpe': (
+        'The Sharpe ratio divides historical return above the configured risk-free rate by volatility, '
+        'summarizing reward per unit of variability. A higher value means this sample compensated its '
+        'variability better; it ranks portfolios within this analysis and is not a quality rating.'
+    ),
+    'concept.diversification': (
+        'Diversification reduces portfolio variance only to the extent that holdings fail to move '
+        'together, which the sample covariance quantifies. Holdings that rise and fall together add '
+        'little risk reduction, so concentration warnings report when few holdings carry most of the '
+        'weight.'
+    ),
+    'concept.in_sample': (
+        'These weights were optimized on the same historical window they are reported over, so the '
+        'optimizer already knew which assets performed well in it. Figures of this kind are in-sample '
+        'hindsight and systematically flatter the method; they are not a backtest of a decision made '
+        'in advance, and they do not estimate future results.'
+    ),
+    'concept.allocation': (
+        'An allocation applies the selected profile\'s target weights to a stated amount, producing '
+        'fractional monetary targets. It places no trades, computes no share counts, assumes no '
+        'currency conversion or live prices, and does not account for costs, taxes or minimum '
+        'investment sizes.'
+    ),
+    'concept.constraints': (
+        'Every portfolio here is fully invested with long-only weights between 0 and 1 that sum to 1, '
+        'with no short selling and no leverage. Constraints restrict the achievable set, so a request '
+        'outside it is reported as infeasible rather than met by relaxing them.'
+    ),
+}
 
 
 def _metrics(label: str, point: dict) -> str:
@@ -34,7 +100,7 @@ def _weights(label: str, weights: dict) -> str:
 def build_facts(tools: AnalysisTools, allocation: dict | None = None,
                 buckets: dict | None = None, news: list | None = None) -> dict[str, str]:
     """Only Python-generated facts may enter the final explanation."""
-    facts = {}
+    facts = dict(CONCEPTS)
     for name in ('low', 'medium', 'high'):
         profile = tools.get_profile(name)
         facts[f'profile.{name}.summary'] = _metrics(name.title(), profile)
@@ -127,12 +193,85 @@ def bucket_facts(result: dict) -> dict[str, str]:
     return facts
 
 
-def mandatory_facts(facts: dict[str, str]) -> list[str]:
-    return [f'profile.{name}.summary' for name in ('low', 'medium', 'high')] + [
+# Word-stem triggers per concept. Deterministic and Python-owned: the floor below
+# must never depend on the model, because the model's selection is not reproducible.
+CONCEPT_KEYWORDS: dict[str, tuple[str, ...]] = {
+    'concept.mpt': ('mpt', 'modern portfolio', 'markowitz', 'theory', 'how does this work',
+                    'how does it work', 'how is this calculated', 'optimis', 'optimiz'),
+    'concept.frontier': ('frontier', 'efficient', 'curve', 'graph', 'chart', 'point'),
+    'concept.profiles': ('profile', 'conservative', 'balanced', 'growth', 'low risk',
+                         'high risk', 'which should i', 'difference between'),
+    'concept.volatility': ('volatil', 'risk', 'std', 'deviation', 'swing', 'fluctuat'),
+    'concept.expected_return': ('expected return', 'historical return', 'return mean',
+                                'average return', 'cagr', 'how much will i', 'how much can i'),
+    'concept.sharpe': ('sharpe', 'risk-adjusted', 'risk adjusted', 'per unit of risk'),
+    'concept.diversification': ('diversif', 'correlat', 'concentrat', 'spread', 'sector'),
+    'concept.in_sample': ('future', 'forecast', 'predict', 'next year', 'going forward',
+                          'affect my', 'effect my', 'impact my', 'should i invest',
+                          'reliable', 'trust', 'hindsight', 'backtest'),
+    'concept.allocation': ('allocat', 'amount', 'invest', 'money', 'buy', 'rupee', 'dollar',
+                           'share', 'how much'),
+    'concept.constraints': ('constraint', 'short', 'leverage', 'borrow', 'cash', 'fully invested'),
+}
+MAX_FLOOR_CONCEPTS = 4
+
+
+def concept_matches(question: str, facts: dict[str, str],
+                    limit: int = MAX_FLOOR_CONCEPTS) -> list[str]:
+    """Concept IDs whose triggers appear in the question, in catalogue order.
+
+    A deterministic floor, not a ranking: it guarantees that a question about
+    method or meaning is met with the definitions Python already wrote, even when
+    the model selects nothing useful.
+    """
+    lowered = question.casefold()
+    matched = [key for key, triggers in CONCEPT_KEYWORDS.items()
+               if key in facts and any(trigger in lowered for trigger in triggers)]
+    return matched[:limit]
+
+
+def request_context(profile: str, allocation: dict | None, buckets: dict | None) -> str:
+    """State the user's own selections so fact choice can be specific to them.
+
+    This is routing context for selection only. It carries no figures the model
+    could restate, and the renderer never reads it.
+    """
+    lines = [f'Selected profile: {profile}.']
+    if allocation is not None:
+        lines.append(f"The user supplied an amount, so the fact 'allocation' describes their own "
+                     f"{allocation['currency']} targets for the {profile} profile.")
+    else:
+        lines.append('No amount was supplied, so no allocation fact exists.')
+    if buckets is not None:
+        prefs = buckets['preferences']
+        lines.append(f"Stated emphasis: {prefs['emphasis'].replace('_', ' ')}; "
+                     f"needs-driven 'bucket.*' facts are available"
+                     + (f", recommending {buckets['recommended']}." if buckets.get('recommended')
+                        else ' and report an infeasible window.'))
+    return ' '.join(lines)
+
+
+def mandatory_facts(facts: dict[str, str], cited: list[str] | None = None) -> list[str]:
+    """Facts the renderer includes whatever the plan selected.
+
+    An overview must disclose everything, so `cited` is omitted and the full
+    block applies. A specific question gets a narrowed block: forcing ten
+    unrelated statistical paragraphs into a one-line answer buries it. Risk
+    disclosure is never dropped, only focused: a warning survives whenever the
+    answer discusses the option it belongs to, and an infeasible window is
+    always reported.
+    """
+    full = [f'profile.{name}.summary' for name in ('low', 'medium', 'high')] + [
         key for key in facts
         if key.endswith('.warnings') or key in ('allocation', 'bucket.window', 'bucket.infeasible')
         or (key.startswith('bucket.') and key.endswith('.summary'))
     ]
+    if cited is None:
+        return full
+    discussed = {key.rsplit('.', 1)[0] for key in cited}
+    return [key for key in full
+            if key == 'bucket.infeasible'
+            or (key.endswith('.warnings') and key.rsplit('.', 1)[0] in discussed)]
 
 
 def default_plan(facts: dict[str, str] | None = None) -> dict[str, Any]:
@@ -143,13 +282,20 @@ def default_plan(facts: dict[str, str] | None = None) -> dict[str, Any]:
     return {'status': 'supported', 'fact_ids': ids}
 
 
-def render_explanation(plan: dict, facts: dict[str, str], metadata: dict) -> dict:
-    """Render only known references, always including provenance and warnings."""
+def render_explanation(plan: dict, facts: dict[str, str], metadata: dict,
+                       question_mode: bool = False) -> dict:
+    """Render only known references, always including provenance and warnings.
+
+    `answer` carries the model's own words when the plan supplied prose that
+    passed number validation; `text` stays the verbatim grounded rendering, so
+    every figure a reader sees is still Python's. In question mode the mandatory
+    block is narrowed to what the answer discusses.
+    """
     chosen = plan['fact_ids']
     if (plan.get('status') not in ('supported', 'unsupported') or
             not isinstance(chosen, list) or any(not isinstance(key, str) or key not in facts for key in chosen)):
         raise ValueError('Invalid explanation references.')
-    ids = list(dict.fromkeys(mandatory_facts(facts) + chosen))
+    ids = list(dict.fromkeys(mandatory_facts(facts, chosen if question_mode else None) + chosen))
     constraints = metadata['constraints']
     provenance = (
         f"Dataset: {metadata['start_date']} to {metadata['end_date']}; "
@@ -163,7 +309,7 @@ def render_explanation(plan: dict, facts: dict[str, str], metadata: dict) -> dic
         paragraphs.append('That question is outside the supported historical data. The available profile comparison follows.')
     paragraphs.extend(facts[key] for key in ids)
     paragraphs.append(DISCLAIMER)
-    return {'text': '\n\n'.join(paragraphs), 'fact_ids': ids,
+    return {'text': '\n\n'.join(paragraphs), 'answer': plan.get('answer'), 'fact_ids': ids,
             'metadata': deepcopy(metadata), 'disclaimer': DISCLAIMER,
             'status': plan['status']}
 

@@ -130,8 +130,10 @@ These come from AGENTS.md, ROADMAP §1 and CLAUDE.md. Every reviewer should chec
 9. **Currency is a label only.** USD/INR performs no FX conversion. Any `₹`
    figure on US stocks must carry the footnote *"Currency is a display label; no
    FX conversion is applied."*
-10. **The LLM is opt-in** (`use_llm=true`) and only selects fact IDs. The API
-    must not add any route that returns model-written prose.
+10. **The LLM is opt-in** (`use_llm=true`). It selects fact IDs and, for a
+    question only, may write `explanation.answer`, which is published only when
+    every figure in it appears in the facts it cites (see AGENTS.md). No other
+    route returns model-written prose.
 11. **Never call `python -m src.download_data`** from the API, deployment
     scripts or CI. The dataset is frozen. Servers get it from the versioned
     release artifact, verified by SHA-256, through `api/bootstrap.py` (§7.2).

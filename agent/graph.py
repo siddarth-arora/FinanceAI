@@ -5,8 +5,9 @@ from typing import Any, TypedDict
 
 from agent.allocation import allocate_amount, validate_allocation_input
 from agent.cache import load_analysis
-from agent.explainer import build_facts, default_plan, render_explanation
-from agent.guardrails import validate_plan, validate_rendered
+from agent.explainer import (build_facts, concept_matches, default_plan, mandatory_facts,
+                             render_explanation, request_context)
+from agent.guardrails import MAX_SELECTED_FACTS, validate_plan, validate_rendered
 from agent.news import NewsProvider, sanitize_news
 from agent.preferences import Preferences, select_buckets
 from agent.provider import DEFAULT_MODEL, GroqExplainer, ProviderError
@@ -25,6 +26,7 @@ class AgentState(TypedDict, total=False):
     plan: dict
     mode: str
     model: str | None
+    answer_rejected: str | None
     fallback_reason: str | None
     tool_calls: list
     result: dict
@@ -95,10 +97,32 @@ def run_agent(payload: dict | None = None, *, amount: Any = None, currency: str 
             amount, currency, state['payload'], profile).to_dict(hide_dust=hide_dust)
         return {'allocation': allocation}
 
+    def _with_concept_floor(plan: dict, facts: dict, *, model_selected: bool) -> dict:
+        """Add the definitions matching the question when nothing else addresses it.
+
+        Selection by the model is not reproducible even at temperature 0, so an
+        otherwise valid call can cite only the mandatory facts and address the
+        question not at all; a fallback plan is the generic overview and is never
+        question-aware. The keyword floor is deterministic and cites text Python
+        wrote, so it cannot invent a figure or a claim. An "unsupported" verdict is
+        left alone: the model is entitled to refuse.
+        """
+        if not question or plan['status'] != 'supported':
+            return plan
+        mandatory = set(mandatory_facts(facts))
+        if model_selected and any(key not in mandatory for key in plan['fact_ids']):
+            return plan
+        added = [key for key in concept_matches(question, facts) if key not in plan['fact_ids']]
+        if not added:
+            return plan
+        return validate_plan({'status': 'supported',
+                              'fact_ids': (plan['fact_ids'] + added)[:MAX_SELECTED_FACTS]}, facts)
+
     def explain_node(state):
         facts = build_facts(state['tools'], state['allocation'], state['buckets'], state['news'])
         update = {'facts': facts, 'plan': default_plan(facts), 'mode': 'offline',
-                  'model': None, 'fallback_reason': None, 'tool_calls': []}
+                  'model': None, 'fallback_reason': None, 'tool_calls': [],
+                  'answer_rejected': None}
         if not use_llm:
             return update
         active = provider
@@ -107,7 +131,9 @@ def run_agent(payload: dict | None = None, *, amount: Any = None, currency: str 
             if active is None:
                 active = GroqExplainer.from_environment()
             update['model'] = active.model
-            update['plan'] = validate_plan(active.generate_plan(question, state['tools'], facts), facts)
+            context = request_context(profile, state['allocation'], state['buckets'])
+            update['plan'] = validate_plan(
+                active.generate_plan(question, state['tools'], facts, context), facts)
             update['mode'] = 'llm'
         except ProviderError as error:
             # ProviderError messages are fixed codes defined by our adapter.
@@ -118,6 +144,9 @@ def run_agent(payload: dict | None = None, *, amount: Any = None, currency: str 
         finally:
             if active is not None:
                 update['tool_calls'] = deepcopy(active.tool_calls)
+                # An injected provider is caller-owned and need not define this.
+                rejected = getattr(active, 'answer_rejected', None)
+                update['answer_rejected'] = rejected if isinstance(rejected, str) else None
                 if provider is None:
                     try:
                         active.close()
@@ -125,15 +154,28 @@ def run_agent(payload: dict | None = None, *, amount: Any = None, currency: str 
                         # Transport cleanup must not override a validated result
                         # or expose an SDK error after a successful fallback.
                         pass
+        # Applied to a fallback plan too: an unreachable provider is no reason to
+        # discard definitions Python already wrote for this question. The mode
+        # stays "fallback" and question_answered stays false, so a fallback is
+        # never presented as having answered.
+        update['plan'] = _with_concept_floor(update['plan'], facts,
+                                             model_selected=update['mode'] == 'llm')
         return update
 
     def guardrail_node(state):
         plan = validate_plan(state['plan'], state['facts'])
-        explanation = render_explanation(plan, state['facts'], state['tools'].get_metadata())
-        validate_rendered(explanation, plan, state['facts'], state['tools'].get_metadata())
-        explanation.update({key: state[key] for key in ('mode', 'model', 'fallback_reason', 'tool_calls')})
+        metadata = state['tools'].get_metadata()
+        question_mode = bool(question)
+        explanation = render_explanation(plan, state['facts'], metadata, question_mode)
+        validate_rendered(explanation, plan, state['facts'], metadata, question_mode)
+        explanation.update({key: state[key] for key in
+                            ('mode', 'model', 'fallback_reason', 'tool_calls', 'answer_rejected')})
         explanation['provider'] = 'groq' if use_llm else None
-        explanation['question_answered'] = bool(question and state['mode'] == 'llm' and plan['status'] == 'supported')
+        # A plan that adds nothing beyond the always-present mandatory facts has
+        # not addressed the question, however successful the provider call was.
+        selected = [key for key in plan['fact_ids'] if key not in set(mandatory_facts(state['facts']))]
+        explanation['question_answered'] = bool(
+            question and state['mode'] == 'llm' and plan['status'] == 'supported' and selected)
         return {'result': {'profiles': state['profiles'], 'buckets': state['buckets'],
                            'allocation': state['allocation'],
                            'news': [item.to_dict() for item in state['news']],

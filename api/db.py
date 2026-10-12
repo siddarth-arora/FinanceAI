@@ -29,9 +29,22 @@ class Plan(SQLModel, table=True):
     allocation_json: str  # server-computed, sanitized allocation snapshot
 
 
+def normalize_database_url(url: str) -> str:
+    """Point a bare Postgres URL at psycopg 3, the driver this service installs.
+
+    Neon (and most hosts) hand out `postgresql://...`, which SQLAlchemy maps to
+    psycopg2; pasted as-is it would fail at startup on a missing module.
+    """
+    for prefix in ("postgresql://", "postgres://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
+
+
 def create_db_engine(url: str) -> Engine:
     """Create the engine and tables. v1 uses create_all; add Alembic before schema changes."""
     kwargs: dict = {}
+    url = normalize_database_url(url)
     parsed = make_url(url)
     if parsed.get_backend_name() == "sqlite":
         kwargs["connect_args"] = {"check_same_thread": False}

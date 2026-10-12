@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { useRef, useState } from "react";
 import { PageSkeleton } from "@/components/common/blocks";
 import { PageHeader } from "@/components/shell/page-header";
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorCard, Note, Select, Switch } from "@/components/ui/primitives";
+import { Badge, Button, Card, CardHeader, EmptyState, ErrorCard, Footnote, Note, Select, Switch } from "@/components/ui/primitives";
 import { ApiError, type Schemas } from "@/lib/api/client";
 import { useExplain, useHealth, type ExplainParams } from "@/lib/api/queries";
 import { isValidAmount, money, type Currency } from "@/lib/format";
@@ -14,10 +14,10 @@ import { EMPHASIS_LABELS, FALLBACK_TEXT, PROFILE_LABELS, PROFILE_NAMES, type Emp
 import { useSettings, useSettingsHydrated } from "@/lib/store/settings";
 
 const SUGGESTIONS = [
+  "What is Modern Portfolio Theory?",
+  "What does the Sharpe ratio mean?",
   "Compare the three profiles",
   "Why is the high profile concentrated?",
-  "What are the medium profile's weights?",
-  "Show frontier point 10",
   "Which stock had the highest historical volatility?",
   "Will NVDA go up next year?",
 ];
@@ -60,14 +60,39 @@ function AnswerCard({ turn }: { turn: Turn }) {
                   : turn.question && explanation.question_answered ? <Badge tone="positive">Question answered</Badge>
                     : turn.question ? <Badge>General comparison (question not answered)</Badge> : null}
               </div>
-              <div className="mt-4 space-y-3 text-sm leading-relaxed text-slate-700">
-                {explanation.text.split("\n\n").map((paragraph, index) => <p key={index}>{paragraph}</p>)}
-              </div>
+              {explanation.answer ? (
+                <>
+                  <div className="mt-4 space-y-3 text-sm leading-relaxed text-slate-700">
+                    {explanation.answer.split("\n\n").map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+                  </div>
+                  <Footnote>
+                    Written by the model from the facts below. Every figure in it appears verbatim in one of them;
+                    an answer stating any other number is discarded.
+                  </Footnote>
+                </>
+              ) : (
+                <div className="mt-4 space-y-3 text-sm leading-relaxed text-slate-700">
+                  {explanation.text.split("\n\n").map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+                </div>
+              )}
+              {explanation.answer_rejected && (
+                <Note tone="warning" className="mt-3">
+                  The model&rsquo;s wording was discarded because it stated a figure the verified facts do not
+                  support. The facts themselves are shown unchanged.
+                </Note>
+              )}
               <button type="button" aria-expanded={sources} onClick={() => setSources(!sources)} className="mt-4 text-xs font-semibold text-primary hover:underline">
-                {sources ? "Hide sources" : `Sources (${explanation.fact_ids.length} facts${explanation.tool_calls.length ? `, ${explanation.tool_calls.length} lookups` : ""})`}
+                {sources
+                  ? "Hide grounding"
+                  : `${explanation.answer ? "Show grounding" : "Sources"} (${explanation.fact_ids.length} facts${explanation.tool_calls.length ? `, ${explanation.tool_calls.length} lookups` : ""})`}
               </button>
               {sources && (
-                <div className="mt-2 space-y-2 rounded-xl bg-surface-muted p-3 text-xs text-slate-700">
+                <div className="mt-2 space-y-3 rounded-xl bg-surface-muted p-3 text-xs text-slate-700">
+                  {explanation.answer && (
+                    <div className="space-y-2 border-b border-border pb-3">
+                      {explanation.text.split("\n\n").map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+                    </div>
+                  )}
                   <p><span className="font-semibold">Facts:</span> {explanation.fact_ids.join(", ")}</p>
                   {explanation.tool_calls.length > 0 && (
                     <p><span className="font-semibold">Lookups:</span> {explanation.tool_calls.map((call) => `${call.name}(${JSON.stringify(call.arguments)})`).join(", ")}</p>
@@ -194,7 +219,7 @@ function ExplainerBody() {
               </div>
             )}
           </Card>
-          <Note>The model can only pick from facts Python computed from the frozen 2021–2025 data. Questions about the future, live prices or personal circumstances are reported as unsupported.</Note>
+          <Note>The model can only pick from facts Python computed from the frozen 2021–2025 data, plus fixed definitions of the method itself — so &ldquo;what does this mean&rdquo; questions are answerable. Questions about the future, live prices or personal circumstances are reported as unsupported.</Note>
           {turns.length === 0 ? (
             <EmptyState title="No answers yet">Generate the overview, or turn on AI mode and ask a question.</EmptyState>
           ) : turns.map((turn) => <AnswerCard key={turn.id} turn={turn} />)}

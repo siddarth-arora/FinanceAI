@@ -628,6 +628,8 @@ export interface components {
         Explanation: {
             /** Text */
             text: string;
+            /** Answer */
+            answer?: string | null;
             /** Fact Ids */
             fact_ids: string[];
             metadata: components["schemas"]["Metadata"];
@@ -647,6 +649,8 @@ export interface components {
             model: string | null;
             /** Fallback Reason */
             fallback_reason: string | null;
+            /** Answer Rejected */
+            answer_rejected?: string | null;
             /** Tool Calls */
             tool_calls: components["schemas"]["ToolCall"][];
             /** Provider */
